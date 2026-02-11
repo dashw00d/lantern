@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import { createTray } from './tray.js';
 import { createMainWindow, getMainWindow } from './windows.js';
 import { startDaemonWatcher } from './daemon.js';
@@ -24,6 +24,10 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    if (process.platform !== 'darwin') {
+      Menu.setApplicationMenu(null);
+    }
+
     createMainWindow();
     createTray();
     startDaemonWatcher();

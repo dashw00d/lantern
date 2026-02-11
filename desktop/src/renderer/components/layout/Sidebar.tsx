@@ -5,8 +5,10 @@ import {
   Server,
   Settings,
 } from 'lucide-react';
+import { useState } from 'react';
 import { cn } from '../../lib/utils';
 import { useAppStore } from '../../stores/appStore';
+import appIcon from '../../../../resources/icon.png';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -17,13 +19,23 @@ const navItems = [
 
 export function Sidebar() {
   const daemonConnected = useAppStore((s) => s.daemonConnected);
+  const [showIconFallback, setShowIconFallback] = useState(false);
 
   return (
     <aside className="flex w-56 flex-col border-r border-border bg-card">
       <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-          L
-        </div>
+        {showIconFallback ? (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
+            L
+          </div>
+        ) : (
+          <img
+            src={appIcon}
+            alt="Lantern icon"
+            className="h-8 w-8 rounded-lg object-cover"
+            onError={() => setShowIconFallback(true)}
+          />
+        )}
         <span className="font-semibold text-lg">Lantern</span>
       </div>
 

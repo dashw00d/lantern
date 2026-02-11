@@ -19,6 +19,7 @@ export function createMainWindow(): BrowserWindow {
     title: 'Lantern',
     icon,
     frame: true,
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -26,6 +27,8 @@ export function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+
+  mainWindow.setMenuBarVisibility(false);
 
   // In development, load from Vite dev server
   if (process.env.NODE_ENV === 'development') {
