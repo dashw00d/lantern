@@ -1,6 +1,7 @@
-import { BrowserWindow, nativeImage, shell } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadAppIcon } from './icons.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -8,8 +9,7 @@ const __dirname = path.dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 
 export function createMainWindow(): BrowserWindow {
-  const iconPath = path.join(__dirname, '../../resources/icon.png');
-  const icon = nativeImage.createFromPath(iconPath);
+  const icon = loadAppIcon();
 
   mainWindow = new BrowserWindow({
     width: 1200,

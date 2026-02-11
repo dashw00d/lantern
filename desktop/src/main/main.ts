@@ -4,6 +4,11 @@ import { createMainWindow, getMainWindow } from './windows.js';
 import { startDaemonWatcher } from './daemon.js';
 import { startTrayRefresh } from './ipc.js';
 
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('class', 'Lantern');
+  app.setName('Lantern');
+}
+
 // Enforce single instance
 const gotLock = app.requestSingleInstanceLock();
 

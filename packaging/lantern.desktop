@@ -1,8 +1,8 @@
 [Desktop Entry]
 Name=Lantern
 Comment=Local development environment manager
-Exec=/opt/lantern/desktop/lantern-desktop --no-sandbox
-Icon=lantern
+Exec=/opt/lantern/desktop/lantern-desktop --class=Lantern --no-sandbox
+Icon=/usr/share/icons/hicolor/512x512/apps/lantern.png
 Type=Application
 Categories=Development;
 StartupWMClass=Lantern

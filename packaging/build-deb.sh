@@ -120,8 +120,10 @@ mkdir -p "$PKG_DIR/usr/share/applications"
 cp "$SCRIPT_DIR/lantern.desktop" "$PKG_DIR/usr/share/applications/lantern.desktop"
 
 # /usr/share/icons — app icon
-mkdir -p "$PKG_DIR/usr/share/icons/hicolor/256x256/apps"
-cp "$SCRIPT_DIR/lantern.png" "$PKG_DIR/usr/share/icons/hicolor/256x256/apps/lantern.png"
+mkdir -p "$PKG_DIR/usr/share/icons/hicolor/512x512/apps"
+cp "$SCRIPT_DIR/lantern.png" "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/lantern.png"
+mkdir -p "$PKG_DIR/usr/share/icons/hicolor/scalable/apps"
+cp "$SCRIPT_DIR/lantern-icon.svg" "$PKG_DIR/usr/share/icons/hicolor/scalable/apps/lantern.svg"
 
 # /etc/systemd/system — systemd service
 mkdir -p "$PKG_DIR/etc/systemd/system"

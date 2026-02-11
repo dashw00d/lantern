@@ -1,24 +1,12 @@
-import { Tray, Menu, nativeImage, shell } from 'electron';
+import { Tray, Menu, shell } from 'electron';
 import { showMainWindow, getMainWindow } from './windows.js';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { loadTrayIcon } from './icons.js';
 
 let tray: Tray | null = null;
 
 export function createTray(): Tray {
-  const iconPath = path.join(__dirname, '../../resources/tray-icon.png');
-  let icon: Electron.NativeImage;
-
-  try {
-    icon = nativeImage.createFromPath(iconPath);
-  } catch {
-    // Fallback: create a small empty icon if file not found
-    icon = nativeImage.createEmpty();
-  }
+  const icon = loadTrayIcon();
 
   tray = new Tray(icon);
   tray.setToolTip('Lantern — Dev Environment Manager');
