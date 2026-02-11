@@ -1,0 +1,6 @@
+name: static
+description: "Static HTML site"
+type: static
+root: "."
+features:
+  auto_start: false

@@ -1,0 +1,22 @@
+appId: dev.lantern.desktop
+productName: Lantern
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**/*
+  - resources/**/*
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  icon: resources/icon.png
+deb:
+  depends:
+    - gconf2
+    - gconf-service
+    - libnotify4
+    - libappindicator1
+    - libxtst6
+    - libnss3

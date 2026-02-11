@@ -1,0 +1,18 @@
+# Build artifacts
+build-deb/
+*.deb
+
+# Internal planning docs
+PLAN.md
+rough-plan.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Lantern
+Comment=Local development environment manager
+Exec=/opt/lantern/desktop/lantern-desktop
+Icon=lantern
+Type=Application
+Categories=Development;
+StartupWMClass=Lantern

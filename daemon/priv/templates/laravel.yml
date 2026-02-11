@@ -1,0 +1,7 @@
+name: laravel
+description: "Laravel PHP application"
+type: php
+root: public
+features:
+  mailpit: true
+  auto_start: false

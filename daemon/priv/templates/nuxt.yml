@@ -1,0 +1,8 @@
+name: nuxt
+description: "Nuxt application"
+type: proxy
+run:
+  cmd: "npx nuxi dev --port ${PORT}"
+  cwd: "."
+features:
+  auto_start: false

@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+
+systemctl stop lanternd.service 2>/dev/null || true
+systemctl disable lanternd.service 2>/dev/null || true

@@ -1,0 +1,8 @@
+name: django
+description: "Django Python application"
+type: proxy
+run:
+  cmd: "python manage.py runserver 127.0.0.1:${PORT}"
+  cwd: "."
+features:
+  auto_start: false

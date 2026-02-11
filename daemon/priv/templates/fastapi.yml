@@ -1,0 +1,8 @@
+name: fastapi
+description: "FastAPI Python application"
+type: proxy
+run:
+  cmd: "uvicorn app.main:app --port ${PORT}"
+  cwd: "."
+features:
+  auto_start: false

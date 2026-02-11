@@ -1,0 +1,12 @@
+Package: lantern
+Version: 0.1.0
+Section: devel
+Priority: optional
+Architecture: amd64
+Depends: systemd, libnotify4, libnss3, libxtst6
+Maintainer: Lantern <lantern@localhost>
+Description: Local development environment manager
+ Lantern is a Valet-like development environment manager for Linux.
+ It includes a daemon (systemd service), a CLI tool, and a desktop app.
+ After installation the daemon runs on port 4777, the `lantern` CLI is
+ available in PATH, and the desktop app appears in your application menu.

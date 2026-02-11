@@ -1,0 +1,15 @@
+[Unit]
+Description=Lantern Development Environment Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/lantern/daemon/bin/lantern start
+Environment=PHX_SERVER=true
+Environment=MIX_ENV=prod
+Environment=HOME=/root
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

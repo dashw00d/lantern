@@ -1,0 +1,10 @@
+name: vite
+description: "Vite dev server"
+type: proxy
+run:
+  cmd: "npx vite --port ${PORT}"
+  cwd: "."
+routing:
+  websocket: true
+features:
+  auto_start: false

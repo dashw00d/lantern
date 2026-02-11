@@ -1,0 +1,8 @@
+name: nextjs
+description: "Next.js application"
+type: proxy
+run:
+  cmd: "npx next dev -p ${PORT}"
+  cwd: "."
+features:
+  auto_start: false
