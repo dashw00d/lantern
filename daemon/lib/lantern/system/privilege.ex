@@ -8,14 +8,31 @@ defmodule Lantern.System.Privilege do
 
   require Logger
 
+  @default_timeout 10_000
+
   @doc """
   Runs a command with `sudo -n`. Returns :ok or {:error, reason}.
+  Includes a timeout (default 10s) so commands can never hang the caller.
   """
-  def sudo(cmd, args \\ []) do
-    case System.cmd("sudo", ["-n", cmd | args], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      {output, code} ->
+  def sudo(cmd, args \\ [], opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
+
+    task =
+      Task.async(fn ->
+        System.cmd("sudo", ["-n", cmd | args], stderr_to_stdout: true)
+      end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {_, 0}} ->
+        :ok
+
+      {:ok, {output, code}} ->
         msg = "#{cmd} #{Enum.join(args, " ")} failed (exit #{code}): #{String.trim(output)}"
+        Logger.warning("[Privilege] #{msg}")
+        {:error, msg}
+
+      nil ->
+        msg = "#{cmd} #{Enum.join(args, " ")} timed out after #{timeout}ms"
         Logger.warning("[Privilege] #{msg}")
         {:error, msg}
     end
