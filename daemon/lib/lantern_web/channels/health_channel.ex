@@ -6,7 +6,7 @@ defmodule LanternWeb.HealthChannel do
 
   use Phoenix.Channel
 
-  alias Lantern.System.{Caddy, DNS, TLS}
+  alias Lantern.System.Health
 
   @health_interval_ms 30_000
 
@@ -32,10 +32,6 @@ defmodule LanternWeb.HealthChannel do
   end
 
   defp get_health do
-    %{
-      dns: DNS.status(),
-      tls: TLS.status(),
-      caddy_installed: Caddy.installed?()
-    }
+    Health.status()
   end
 end

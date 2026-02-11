@@ -114,6 +114,13 @@ export function useProjectChannel() {
   useEffect(() => {
     const channel = joinChannel('project:lobby');
 
+    channel.on(
+      'status_change',
+      (payload: { project: string; status: Project['status'] }) => {
+        updateProject(payload.project, { status: payload.status });
+      }
+    );
+
     channel.on('project_updated', (payload: { project: Project }) => {
       updateProject(payload.project.name, payload.project);
     });

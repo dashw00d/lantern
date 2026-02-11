@@ -12,6 +12,7 @@ defmodule LanternWeb.Router do
     get "/projects", ProjectController, :index
     post "/projects/scan", ProjectController, :scan
     get "/projects/:name", ProjectController, :show
+    get "/projects/:name/logs", ProjectController, :logs
     post "/projects/:name/activate", ProjectController, :activate
     post "/projects/:name/deactivate", ProjectController, :deactivate
     post "/projects/:name/restart", ProjectController, :restart

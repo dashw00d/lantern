@@ -1,7 +1,6 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { joinChannel, leaveChannel } from '../api/socket';
-import type { LogEntry } from '../types';
 
 export function useLogs(projectName: string) {
   const logs = useAppStore((s) => s.logs[projectName] || []);
@@ -12,8 +11,14 @@ export function useLogs(projectName: string) {
   useEffect(() => {
     const channel = joinChannel(channelTopic);
 
-    channel.on('log', (payload: LogEntry) => {
-      appendLog(projectName, payload);
+    channel.on('log_line', (payload: { line?: string }) => {
+      if (!payload.line) return;
+
+      appendLog(projectName, {
+        timestamp: new Date().toISOString(),
+        stream: 'stdout',
+        line: payload.line,
+      });
     });
 
     return () => {

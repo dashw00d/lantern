@@ -24,6 +24,13 @@ defmodule LanternWeb.ProjectControllerTest do
     end
   end
 
+  describe "GET /api/projects/:name/logs" do
+    test "returns 404 for nonexistent project", %{conn: conn} do
+      conn = get(conn, "/api/projects/nonexistent/logs")
+      assert %{"error" => "not_found"} = json_response(conn, 404)
+    end
+  end
+
   describe "POST /api/projects/:name/activate" do
     test "returns 404 for nonexistent project", %{conn: conn} do
       conn = post(conn, "/api/projects/nonexistent/activate")

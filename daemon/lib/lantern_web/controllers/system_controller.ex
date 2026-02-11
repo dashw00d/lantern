@@ -1,17 +1,12 @@
 defmodule LanternWeb.SystemController do
   use LanternWeb, :controller
 
+  alias Lantern.System.Health
   alias Lantern.System.{Caddy, DNS, TLS}
   alias Lantern.Config.Settings
 
   def health(conn, _params) do
-    health = %{
-      dns: DNS.status(),
-      tls: TLS.status(),
-      caddy_installed: Caddy.installed?()
-    }
-
-    json(conn, %{data: health})
+    json(conn, %{data: Health.status()})
   end
 
   def init(conn, _params) do

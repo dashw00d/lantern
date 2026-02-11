@@ -36,8 +36,8 @@ export function useHealthChannel() {
     try {
       const channel = joinChannel('system:health');
 
-      channel.on('health_update', (payload: HealthStatus) => {
-        setHealth(payload);
+      channel.on('health_update', (payload: { health: HealthStatus }) => {
+        setHealth(payload.health);
         setDaemonConnected(true);
       });
     } catch {

@@ -8,7 +8,15 @@ defmodule Lantern.Projects.Manager do
 
   require Logger
 
-  alias Lantern.Projects.{Project, Scanner, Detector, PortAllocator, ProjectSupervisor, ProcessRunner}
+  alias Lantern.Projects.{
+    Project,
+    Scanner,
+    Detector,
+    PortAllocator,
+    ProjectSupervisor,
+    ProcessRunner
+  }
+
   alias Lantern.System.Caddy
   alias Lantern.Config.Store
 
@@ -167,27 +175,26 @@ defmodule Lantern.Projects.Manager do
     with {:ok, port} <- PortAllocator.allocate(project.name) do
       project = %{project | port: port, status: :starting}
 
-      # Generate and write Caddy config
-      Caddy.write_config(project)
-      Caddy.reload()
+      with :ok <- ensure_caddy_config(project) do
+        # Start the dev server process
+        case ProjectSupervisor.start_runner(project) do
+          {:ok, _pid} ->
+            {:ok, %{project | status: :running}}
 
-      # Start the dev server process
-      case ProjectSupervisor.start_runner(project) do
-        {:ok, _pid} ->
-          {:ok, %{project | status: :running}}
-
-        {:error, reason} ->
-          Logger.error("Failed to start runner for #{project.name}: #{inspect(reason)}")
-          {:ok, %{project | status: :error}}
+          {:error, reason} ->
+            Logger.error("Failed to start runner for #{project.name}: #{inspect(reason)}")
+            {:ok, %{project | status: :error}}
+        end
       end
     end
   end
 
   defp do_activate(%Project{type: type} = project) when type in [:php, :static] do
     project = %{project | status: :running}
-    Caddy.write_config(project)
-    Caddy.reload()
-    {:ok, project}
+
+    with :ok <- ensure_caddy_config(project) do
+      {:ok, project}
+    end
   end
 
   defp do_activate(%Project{type: :unknown} = project) do
@@ -197,6 +204,39 @@ defmodule Lantern.Projects.Manager do
   defp do_activate(_project) do
     {:error, "Cannot activate project with unsupported type"}
   end
+
+  defp ensure_caddy_config(project) do
+    with :ok <- normalize_caddy_result(Caddy.write_config(project), "write Caddy config"),
+         :ok <- normalize_caddy_result(Caddy.reload(), "reload Caddy") do
+      :ok
+    end
+  end
+
+  defp normalize_caddy_result(:ok, _action), do: :ok
+  defp normalize_caddy_result({_, 0}, _action), do: :ok
+
+  defp normalize_caddy_result({:error, reason}, action) do
+    {:error, "#{action} failed: #{format_reason(reason)}"}
+  end
+
+  defp normalize_caddy_result({output, exit_code}, action)
+       when is_integer(exit_code) do
+    rendered_output = output |> to_string() |> String.trim()
+    base = "#{action} failed with exit code #{exit_code}"
+
+    if rendered_output == "" do
+      {:error, base}
+    else
+      {:error, "#{base}: #{rendered_output}"}
+    end
+  end
+
+  defp normalize_caddy_result(other, action) do
+    {:error, "#{action} failed: #{format_reason(other)}"}
+  end
+
+  defp format_reason(reason) when is_binary(reason), do: String.trim(reason)
+  defp format_reason(reason), do: inspect(reason)
 
   defp do_deactivate(%Project{type: :proxy, status: status} = project)
        when status in [:running, :starting] do

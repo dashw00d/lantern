@@ -197,14 +197,14 @@ cmd_scan() {
     result=$(api POST /projects/scan)
 
     local total new_count
-    total=$(echo "$result" | jq -r '.data.total // 0' 2>/dev/null)
-    new_count=$(echo "$result" | jq -r '.data.new // 0' 2>/dev/null)
+    total=$(echo "$result" | jq -r '.meta.total // .meta.count // (.data | length) // 0' 2>/dev/null)
+    new_count=$(echo "$result" | jq -r '.meta.new // .meta.new_count // 0' 2>/dev/null)
 
     success "Found ${C_BOLD}${total}${C_RESET} projects (${new_count} new)"
     echo ""
 
     # Show detected projects
-    echo "$result" | jq -r '.data.projects[]? | "  \(.name)\t\(.type)\t\(.detection.confidence // "unknown")"' 2>/dev/null | \
+    echo "$result" | jq -r '.data[]? | "  \(.name)\t\(.type)\t\(.detection.confidence // "unknown")"' 2>/dev/null | \
     while IFS=$'\t' read -r name type confidence; do
         local type_badge
         type_badge=$(type_badge "$type")

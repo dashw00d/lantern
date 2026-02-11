@@ -1,18 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <!-- Background circle -->
-  <circle cx="128" cy="128" r="120" fill="#1a1a2e"/>
-  <!-- Lantern body -->
-  <rect x="88" y="80" width="80" height="110" rx="8" fill="none" stroke="#f59e0b" stroke-width="6"/>
-  <!-- Lantern top cap -->
-  <rect x="78" y="70" width="100" height="16" rx="4" fill="#f59e0b"/>
-  <!-- Lantern handle -->
-  <path d="M108 70 Q108 40 128 40 Q148 40 148 70" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
-  <!-- Lantern bottom -->
-  <rect x="78" y="184" width="100" height="16" rx="4" fill="#f59e0b"/>
-  <!-- Flame glow -->
-  <ellipse cx="128" cy="140" rx="24" ry="30" fill="#f59e0b" opacity="0.2"/>
-  <!-- Flame -->
-  <path d="M128 160 Q116 145 120 130 Q124 118 128 110 Q132 118 136 130 Q140 145 128 160Z" fill="#f59e0b"/>
-  <path d="M128 155 Q121 145 124 135 Q126 126 128 120 Q130 126 132 135 Q135 145 128 155Z" fill="#fbbf24"/>
-  <path d="M128 148 Q124 142 126 136 Q127 131 128 128 Q129 131 130 136 Q132 142 128 148Z" fill="#fef3c7"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="flame-outer" x1="0.5" y1="1" x2="0.5" y2="0">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="45%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="flame-inner" x1="0.5" y1="1" x2="0.5" y2="0">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#fef3c7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Lantern top (handle + cap + roof) -->
+  <path fill="#6b7280" d="M256.53 19.094c-28.53 0-51.842 23.313-51.842 51.843c0 13.565 5.28 25.95 13.875 35.22l-110.532 78.53h296.814l-110.594-78.25c8.755-9.297 14.156-21.8 14.156-35.5c0-28.53-23.344-51.843-51.875-51.843zm0 18.687c18.432 0 33.19 14.727 33.19 33.157c0 9.792-4.177 18.538-10.845 24.594l-22.72-16.06l-22.25 15.81c-6.497-6.044-10.53-14.687-10.53-24.343c0-18.43 14.726-33.156 33.156-33.156z"/>
+  <!-- Lantern glass body (dark panel + cutout) -->
+  <path fill="#1e293b" d="M96.44 204l3.343 11.875l65.376 232.75l1.906 6.813h178.876l1.937-6.813l65.375-232.75L416.594 204H96.437zm24.656 18.688h270.812L331.78 436.75H181.25l-60.156-214.063z"/>
+  <!-- Flame glow behind -->
+  <ellipse cx="260" cy="355" rx="85" ry="100" fill="url(#glow)"/>
+  <!-- Flame - outer (orange → red → orange) -->
+  <path fill="url(#flame-outer)" d="M267.283 239.375c29.012 47.73-76.807 70.517-60.155 133.75c11.2 25 29.146 41.394 50.22 42.03c48.84 0 73.57-53.528 60.75-99.842c-4.847 24.07-24.934 34.845-34.876 22.375c-24.115-30.248 36.436-56.768-15.94-98.313z"/>
+  <!-- Flame - inner core (yellow → white) -->
+  <path fill="url(#flame-inner)" d="M260 290c12 20-25 38-18 68c5 12 14 20 24 20c22 0 34-26 28-48c-3 12-13 16-18 10c-12-15 16-28-16-50z"/>
+  <!-- Bottom base -->
+  <path fill="#6b7280" d="M127.25 473.72v18.686h258.594V473.72z"/>
 </svg>
