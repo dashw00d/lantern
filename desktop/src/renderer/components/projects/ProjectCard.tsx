@@ -31,7 +31,7 @@ export function ProjectCard({
     <div className="group rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/30">
       <div className="flex items-start justify-between">
         <Link
-          to={`/projects/${project.name}`}
+          to={`/projects/${encodeURIComponent(project.name)}`}
           className="flex-1 min-w-0"
         >
           <h3 className="font-semibold text-card-foreground truncate group-hover:text-primary transition-colors">

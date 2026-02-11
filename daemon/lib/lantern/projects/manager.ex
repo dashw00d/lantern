@@ -172,16 +172,13 @@ defmodule Lantern.Projects.Manager do
     with {:ok, port} <- PortAllocator.allocate(project.name) do
       project = %{project | port: port, status: :starting}
 
-      with :ok <- ensure_caddy_config(project) do
-        # Start the dev server process
-        case ProjectSupervisor.start_runner(project) do
-          {:ok, _pid} ->
-            {:ok, %{project | status: :running}}
-
-          {:error, reason} ->
-            Logger.error("Failed to start runner for #{project.name}: #{inspect(reason)}")
-            {:ok, %{project | status: :error}}
-        end
+      with :ok <- ensure_caddy_config(project),
+           :ok <- start_proxy_runner(project) do
+        {:ok, %{project | status: :running}}
+      else
+        {:error, reason} ->
+          cleanup_proxy_activation(project)
+          {:error, reason}
       end
     end
   end
@@ -232,25 +229,55 @@ defmodule Lantern.Projects.Manager do
     {:error, "#{action} failed: #{format_reason(other)}"}
   end
 
-  defp format_reason(reason) when is_binary(reason), do: String.trim(reason)
-  defp format_reason(reason), do: inspect(reason)
+  defp start_proxy_runner(%Project{} = project) do
+    case ProjectSupervisor.start_runner(project) do
+      {:ok, _pid} ->
+        :ok
 
-  defp do_deactivate(%Project{type: :proxy, status: status} = project)
-       when status in [:running, :starting] do
-    # Stop the process runner
+      {:error, {:already_started, _pid}} ->
+        # Recover stale runner state left behind by previous lifecycle operations.
+        stop_proxy_runner(project.name)
+
+        case ProjectSupervisor.start_runner(project) do
+          {:ok, _pid} -> :ok
+          {:error, reason} -> {:error, "start project runner failed: #{format_reason(reason)}"}
+        end
+
+      {:error, reason} ->
+        {:error, "start project runner failed: #{format_reason(reason)}"}
+    end
+  end
+
+  defp cleanup_proxy_activation(%Project{} = project) do
+    stop_proxy_runner(project.name)
+    Caddy.remove_config(project.name)
+    Caddy.reload()
+    PortAllocator.release(project.name)
+    :ok
+  end
+
+  defp stop_proxy_runner(project_name) do
     try do
-      ProcessRunner.stop_server(project.name)
+      ProcessRunner.stop_server(project_name)
     rescue
       _ -> :ok
     catch
       :exit, _ -> :ok
     end
 
-    # Remove Caddy config
+    :ok
+  end
+
+  defp format_reason(reason) when is_binary(reason), do: String.trim(reason)
+  defp format_reason(reason), do: inspect(reason)
+
+  defp do_deactivate(%Project{type: :proxy} = project) do
+    stop_proxy_runner(project.name)
     Caddy.remove_config(project.name)
     Caddy.reload()
+    PortAllocator.release(project.name)
 
-    %{project | status: :stopped, pid: nil}
+    %{project | status: :stopped, pid: nil, port: nil}
   end
 
   defp do_deactivate(%Project{} = project) do

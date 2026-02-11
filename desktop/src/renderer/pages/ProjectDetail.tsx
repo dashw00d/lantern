@@ -20,23 +20,45 @@ import type { Project } from '../types';
 type Tab = 'overview' | 'run' | 'routing' | 'mail' | 'logs';
 
 export function ProjectDetail() {
-  const { name } = useParams<{ name: string }>();
+  const { name: routeName } = useParams<{ name: string }>();
+  const projectName = routeName
+    ? (() => {
+        try {
+          return decodeURIComponent(routeName);
+        } catch {
+          return routeName;
+        }
+      })()
+    : null;
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [fetchedProject, setFetchedProject] = useState<Project | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const updateProject = useAppStore((s) => s.updateProject);
-  const project = useAppStore((s) =>
-    s.projects.find((p) => p.name === name)
+  const projectFromStore = useAppStore((s) =>
+    s.projects.find((p) => p.name === projectName)
   );
-  const { logs, clear: clearLogs } = useLogs(name || '');
+  const project = projectFromStore || fetchedProject;
+  const { logs, clear: clearLogs } = useLogs(projectName || '');
 
   const fetchProject = useCallback(async () => {
-    if (!name) return;
+    if (!projectName) {
+      setLoadError('Invalid project URL');
+      return;
+    }
+
+    setLoadError(null);
+
     try {
-      const res = await api.getProject(name);
-      updateProject(name, res.data);
+      const res = await api.getProject(projectName);
+      setFetchedProject(res.data);
+      updateProject(projectName, res.data);
     } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to load project';
+      setLoadError(message);
       console.error('Failed to fetch project:', err);
     }
-  }, [name, updateProject]);
+  }, [projectName, updateProject]);
 
   useEffect(() => {
     fetchProject();
@@ -44,8 +66,19 @@ export function ProjectDetail() {
 
   if (!project) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Loading project...</p>
+      <div className="space-y-3">
+        <Link
+          to="/projects"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Projects
+        </Link>
+        <div className="flex items-center justify-center h-64 rounded-lg border border-border bg-card">
+          <p className="text-muted-foreground">
+            {loadError ? `Project could not be loaded: ${loadError}` : 'Loading project...'}
+          </p>
+        </div>
       </div>
     );
   }
@@ -53,7 +86,7 @@ export function ProjectDetail() {
   const isRunning = project.status === 'running';
   const isBusy =
     project.status === 'starting' || project.status === 'stopping';
-  const url = `https://${project.domain}`;
+  const url = project.domain ? `https://${project.domain}` : '';
 
   const handleActivate = async () => {
     updateProject(project.name, { status: 'starting' });
@@ -141,7 +174,7 @@ export function ProjectDetail() {
               Start
             </button>
           )}
-          {isRunning && (
+          {isRunning && project.domain && (
             <a
               href={url}
               target="_blank"
@@ -188,7 +221,10 @@ export function ProjectDetail() {
 }
 
 function OverviewTab({ project }: { project: Project }) {
-  const url = `https://${project.domain}`;
+  const hasDomain = Boolean(project.domain);
+  const url = hasDomain ? `https://${project.domain}` : '';
+  const detection = project.detection || { confidence: 'low', source: 'auto' };
+  const features = project.features || {};
 
   return (
     <div className="grid grid-cols-2 gap-6">
@@ -199,9 +235,10 @@ function OverviewTab({ project }: { project: Project }) {
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Domain</dt>
               <dd className="flex items-center gap-1">
-                {project.domain}
+                {project.domain || 'N/A'}
                 <button
-                  onClick={() => navigator.clipboard.writeText(url)}
+                  onClick={() => hasDomain && navigator.clipboard.writeText(url)}
+                  disabled={!hasDomain}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <Copy className="h-3 w-3" />
@@ -214,12 +251,12 @@ function OverviewTab({ project }: { project: Project }) {
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Type</dt>
-              <dd><TypeBadge type={project.type} /></dd>
+              <dd><TypeBadge type={project.type || 'unknown'} /></dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Detection</dt>
               <dd className="capitalize">
-                {project.detection.confidence} ({project.detection.source})
+                {detection.confidence} ({detection.source})
               </dd>
             </div>
             {project.template && (
@@ -242,7 +279,7 @@ function OverviewTab({ project }: { project: Project }) {
         <div className="rounded-lg border border-border bg-card p-4">
           <h3 className="text-sm font-semibold mb-3">Features</h3>
           <div className="space-y-2">
-            {Object.entries(project.features).map(([key, value]) => (
+            {Object.entries(features).map(([key, value]) => (
               <div key={key} className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground capitalize">
                   {key.replace(/_/g, ' ')}
@@ -314,7 +351,7 @@ function RoutingTab({ project }: { project: Project }) {
         <dl className="space-y-3 text-sm">
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Primary Domain</dt>
-            <dd>{project.domain}</dd>
+            <dd>{project.domain || 'N/A'}</dd>
           </div>
           {project.root && (
             <div className="flex justify-between">
@@ -335,7 +372,7 @@ function RoutingTab({ project }: { project: Project }) {
 }
 
 function MailTab({ project }: { project: Project }) {
-  const mailEnabled = project.features.mailpit;
+  const mailEnabled = Boolean(project.features?.mailpit);
 
   return (
     <div className="space-y-4">

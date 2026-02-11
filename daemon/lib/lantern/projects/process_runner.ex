@@ -82,7 +82,7 @@ defmodule Lantern.Projects.ProcessRunner do
   @impl true
   def handle_call(:stop_server, _from, state) do
     new_state = do_stop(state)
-    {:reply, :ok, new_state}
+    {:stop, :normal, :ok, new_state}
   end
 
   @impl true

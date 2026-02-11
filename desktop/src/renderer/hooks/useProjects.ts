@@ -91,7 +91,7 @@ export function useProjects() {
     ? projects.filter(
         (p) =>
           p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.domain.toLowerCase().includes(searchQuery.toLowerCase())
+          (p.domain || '').toLowerCase().includes(searchQuery.toLowerCase())
       )
     : projects;
 

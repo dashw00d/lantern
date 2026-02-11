@@ -90,7 +90,7 @@ export function Dashboard() {
                 <div className="flex items-center gap-3">
                   <StatusBadge status={project.status} />
                   <Link
-                    to={`/projects/${project.name}`}
+                    to={`/projects/${encodeURIComponent(project.name)}`}
                     className="text-sm font-medium hover:text-primary"
                   >
                     {project.name}
@@ -135,7 +135,7 @@ export function Dashboard() {
             {[...errors, ...needsConfig].map((project) => (
               <Link
                 key={project.name}
-                to={`/projects/${project.name}`}
+                to={`/projects/${encodeURIComponent(project.name)}`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-red-500/5"
               >
                 <StatusBadge status={project.status} />

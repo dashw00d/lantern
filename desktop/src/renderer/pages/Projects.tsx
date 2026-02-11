@@ -152,7 +152,7 @@ export function Projects() {
                   <tr key={project.name} className="hover:bg-accent/50">
                     <td className="px-4 py-3">
                       <Link
-                        to={`/projects/${project.name}`}
+                        to={`/projects/${encodeURIComponent(project.name)}`}
                         className="text-sm font-medium hover:text-primary"
                       >
                         {project.name}
