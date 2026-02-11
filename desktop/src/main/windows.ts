@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,6 +33,21 @@ export function createMainWindow(): BrowserWindow {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  // Open external links in the OS default browser, not in Electron
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    // Allow loading the app itself, block everything else → open in browser
+    const appOrigins = ['http://localhost:5173', 'file://'];
+    if (!appOrigins.some((origin) => url.startsWith(origin))) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
   });
 
   // Minimize to tray on close instead of quitting

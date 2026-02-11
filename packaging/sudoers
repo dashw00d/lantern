@@ -1,0 +1,36 @@
+# Lantern development environment — passwordless privilege escalation
+# Installed by the lantern .deb package. Managed automatically.
+# See: https://github.com/your-username/lantern
+
+# Service management (caddy, managed services, NetworkManager, dnsmasq)
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl start caddy
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl stop caddy
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl reload caddy
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart caddy
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl enable caddy
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl disable caddy
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl start mailpit.service
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl stop mailpit.service
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl start redis-server.service
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl stop redis-server.service
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl start postgresql.service
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl stop postgresql.service
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart NetworkManager
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart dnsmasq
+__USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+
+# Caddy TLS trust
+__USER__ ALL=(root) NOPASSWD: /usr/bin/caddy trust
+
+# Init-time directory setup
+__USER__ ALL=(root) NOPASSWD: /usr/bin/mkdir -p /etc/caddy/sites.d
+__USER__ ALL=(root) NOPASSWD: /usr/bin/chown __USER__ /etc/caddy/sites.d
+__USER__ ALL=(root) NOPASSWD: /usr/bin/chown -R __USER__ /etc/caddy/sites.d
+
+# Init-time config file writes (from staging dir)
+__USER__ ALL=(root) NOPASSWD: /usr/bin/cp /tmp/lantern_priv_* /etc/caddy/Caddyfile
+__USER__ ALL=(root) NOPASSWD: /usr/bin/cp /tmp/lantern_priv_* /etc/NetworkManager/dnsmasq.d/lantern.conf
+
+# Systemd unit management (for project-level services)
+__USER__ ALL=(root) NOPASSWD: /usr/bin/cp /tmp/lantern_priv_* /etc/systemd/system/*
+__USER__ ALL=(root) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/lantern-*

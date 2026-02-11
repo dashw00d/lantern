@@ -1,9 +1,107 @@
 #!/bin/bash
+# ============================================================================
+# Lantern post-install — fully automated system setup
+# Runs as root during dpkg -i. Sets up everything so the user never
+# needs to manually configure anything.
+# ============================================================================
 set -e
+
+REAL_USER="${SUDO_USER:-${LOGNAME:-$(logname 2>/dev/null || echo root)}}"
+REAL_HOME=$(eval echo "~${REAL_USER}")
+
+info() { echo "  [lantern] $*"; }
+
+# ---------------------------------------------------------------------------
+# 1. Sudoers — passwordless privilege escalation for daemon operations
+# ---------------------------------------------------------------------------
+SUDOERS_SRC="/opt/lantern/packaging/sudoers"
+SUDOERS_DST="/etc/sudoers.d/lantern"
+
+if [[ -f "$SUDOERS_SRC" && "$REAL_USER" != "root" ]]; then
+    sed "s/__USER__/${REAL_USER}/g" "$SUDOERS_SRC" > "$SUDOERS_DST"
+    chmod 0440 "$SUDOERS_DST"
+    if visudo -cf "$SUDOERS_DST" >/dev/null 2>&1; then
+        info "Sudoers configured for ${REAL_USER}"
+    else
+        rm -f "$SUDOERS_DST"
+        info "WARNING: sudoers validation failed, skipping"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Caddy configuration
+# ---------------------------------------------------------------------------
+if command -v caddy &>/dev/null; then
+    # Create sites.d owned by the user (daemon writes configs here directly).
+    # Use recursive chown to migrate pre-existing root-owned project configs.
+    mkdir -p /etc/caddy/sites.d
+    if [[ "$REAL_USER" != "root" ]]; then
+        chown -R "$REAL_USER" /etc/caddy/sites.d
+    fi
+
+    # Write base Caddyfile if it doesn't already import our sites
+    if [[ ! -f /etc/caddy/Caddyfile ]] || ! grep -q "import /etc/caddy/sites.d" /etc/caddy/Caddyfile; then
+        cat > /etc/caddy/Caddyfile <<'CADDYFILE'
+{
+  local_certs
+}
+import /etc/caddy/sites.d/*.caddy
+CADDYFILE
+        info "Caddyfile configured"
+    fi
+
+    # Start or reload Caddy
+    if systemctl is-active caddy >/dev/null 2>&1; then
+        systemctl reload caddy 2>/dev/null || systemctl restart caddy
+    else
+        systemctl enable caddy 2>/dev/null || true
+        systemctl start caddy 2>/dev/null || true
+    fi
+    info "Caddy running"
+
+    # Trust the Caddy local CA (run as user so cert goes to their trust store)
+    if [[ "$REAL_USER" != "root" ]]; then
+        su - "$REAL_USER" -c "caddy trust 2>/dev/null" || true
+    fi
+else
+    info "WARNING: Caddy not installed — install it for HTTPS routing"
+    info "  See: https://caddyserver.com/docs/install#debian-ubuntu-raspbian"
+fi
+
+# ---------------------------------------------------------------------------
+# 3. DNS — resolve .glow domains to 127.0.0.1
+# ---------------------------------------------------------------------------
+if [[ -d /etc/NetworkManager/dnsmasq.d ]]; then
+    if [[ ! -f /etc/NetworkManager/dnsmasq.d/lantern.conf ]]; then
+        echo "address=/.glow/127.0.0.1" > /etc/NetworkManager/dnsmasq.d/lantern.conf
+        systemctl restart NetworkManager 2>/dev/null || true
+        info "DNS configured (NetworkManager/dnsmasq)"
+    fi
+elif [[ -d /etc/dnsmasq.d ]]; then
+    if [[ ! -f /etc/dnsmasq.d/lantern.conf ]]; then
+        echo "address=/.glow/127.0.0.1" > /etc/dnsmasq.d/lantern.conf
+        systemctl restart dnsmasq 2>/dev/null || true
+        info "DNS configured (dnsmasq)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Systemd service — run daemon as the installing user
+# ---------------------------------------------------------------------------
+if [[ "$REAL_USER" != "root" ]]; then
+    sed -i "/\[Service\]/a User=${REAL_USER}\nEnvironment=HOME=${REAL_HOME}" \
+        /etc/systemd/system/lanternd.service
+fi
 
 systemctl daemon-reload
 systemctl enable lanternd.service
 systemctl start lanternd.service
+info "Daemon started"
 
+# ---------------------------------------------------------------------------
+# 5. Desktop integration
+# ---------------------------------------------------------------------------
 update-desktop-database /usr/share/applications/ 2>/dev/null || true
 gtk-update-icon-cache /usr/share/icons/hicolor/ 2>/dev/null || true
+
+info "Installation complete"

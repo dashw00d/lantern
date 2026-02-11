@@ -128,8 +128,11 @@ defmodule Lantern.Projects.PortAllocator do
 
   defp load_assignments do
     case Store.get(:port_assignments) do
-      assignments when is_map(assignments) -> assignments
-      _ -> %{}
+      assignments when is_map(assignments) ->
+        Map.new(assignments, fn {k, v} -> {to_string(k), v} end)
+
+      _ ->
+        %{}
     end
   rescue
     _ -> %{}

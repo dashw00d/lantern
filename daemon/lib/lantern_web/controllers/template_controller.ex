@@ -51,6 +51,11 @@ defmodule LanternWeb.TemplateController do
         conn
         |> put_status(:not_found)
         |> json(%{error: "not_found", message: "Template '#{name}' not found"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "update_failed", message: inspect(reason)})
     end
   end
 
@@ -71,11 +76,22 @@ defmodule LanternWeb.TemplateController do
     end
   end
 
+  @valid_types ~w(php proxy static unknown)a
+
   defp safe_to_atom(nil), do: nil
-  defp safe_to_atom(str) when is_binary(str), do: String.to_atom(str)
+
+  defp safe_to_atom(str) when is_binary(str) do
+    Enum.find(@valid_types, fn t -> Atom.to_string(t) == str end)
+  end
+
+  @valid_features ~w(mailpit auto_start auto_open_browser)a
 
   defp atomize_features(features) when is_map(features) do
-    Map.new(features, fn {k, v} -> {String.to_atom(k), v} end)
+    Map.new(features, fn {k, v} ->
+      atom_key = Enum.find(@valid_features, fn f -> Atom.to_string(f) == k end)
+      {atom_key || k, v}
+    end)
+    |> Map.reject(fn {k, _v} -> is_binary(k) end)
   end
 
   defp atomize_features(_), do: %{}

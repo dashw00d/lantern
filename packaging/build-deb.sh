@@ -101,7 +101,7 @@ mkdir -p "$PKG_DIR/opt/lantern/desktop"
 cp -a "$ELECTRON_UNPACKED"/. "$PKG_DIR/opt/lantern/desktop/"
 
 # Rename the electron binary to lantern-desktop
-ELECTRON_BIN=$(find "$PKG_DIR/opt/lantern/desktop" -maxdepth 1 -name "lantern-desktop" -o -name "Lantern" -o -name "lantern" -type f -executable 2>/dev/null | head -1)
+ELECTRON_BIN=$(find "$PKG_DIR/opt/lantern/desktop" -maxdepth 1 \( -name "lantern-desktop" -o -name "Lantern" -o -name "lantern" \) -type f -executable 2>/dev/null | head -1)
 if [[ -n "$ELECTRON_BIN" && "$(basename "$ELECTRON_BIN")" != "lantern-desktop" ]]; then
     mv "$ELECTRON_BIN" "$PKG_DIR/opt/lantern/desktop/lantern-desktop"
 fi
@@ -126,6 +126,10 @@ cp "$SCRIPT_DIR/lantern.png" "$PKG_DIR/usr/share/icons/hicolor/256x256/apps/lant
 # /etc/systemd/system — systemd service
 mkdir -p "$PKG_DIR/etc/systemd/system"
 cp "$SCRIPT_DIR/lanternd.service" "$PKG_DIR/etc/systemd/system/lanternd.service"
+
+# /opt/lantern/packaging — sudoers template (installed by postinst)
+mkdir -p "$PKG_DIR/opt/lantern/packaging"
+cp "$SCRIPT_DIR/sudoers" "$PKG_DIR/opt/lantern/packaging/sudoers"
 
 # ---------------------------------------------------------------------------
 # Step 4: Calculate installed size for control file

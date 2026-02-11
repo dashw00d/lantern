@@ -3,7 +3,8 @@ Version: 0.1.0
 Section: devel
 Priority: optional
 Architecture: amd64
-Depends: systemd, libnotify4, libnss3, libxtst6
+Depends: systemd, sudo, libnotify4, libnss3, libxtst6, libgtk-3-0, libgbm1, libasound2, libxss1
+Recommends: caddy, dnsmasq
 Maintainer: Lantern <lantern@localhost>
 Description: Local development environment manager
  Lantern is a Valet-like development environment manager for Linux.

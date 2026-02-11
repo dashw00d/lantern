@@ -17,6 +17,11 @@ defmodule LanternWeb.ProfileController do
         conn
         |> put_status(:not_found)
         |> json(%{error: "not_found", message: "Profile '#{name}' not found"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "activate_failed", message: inspect(reason)})
     end
   end
 end

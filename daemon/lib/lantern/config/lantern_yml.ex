@@ -57,7 +57,7 @@ defmodule Lantern.Config.LanternYml do
   Builds a Project struct from a parsed lantern.yml and project metadata.
   """
   def to_project(yml_attrs, name, path) do
-    tld = Application.get_env(:lantern, :tld, ".test")
+    tld = Application.get_env(:lantern, :tld, ".glow")
 
     base = %{
       name: name,

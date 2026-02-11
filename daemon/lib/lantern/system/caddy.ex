@@ -2,9 +2,14 @@ defmodule Lantern.System.Caddy do
   @moduledoc """
   Manages Caddy web server configuration for project routing.
   Generates per-project .caddy config files and reloads Caddy.
+
+  Config files in /etc/caddy/sites.d/ are written directly (directory
+  is owned by the daemon user after init). Service management uses
+  sudo via the Privilege module.
   """
 
   alias Lantern.Projects.Project
+  alias Lantern.System.Privilege
 
   @sites_dir "/etc/caddy/sites.d"
   @caddyfile_path "/etc/caddy/Caddyfile"
@@ -41,13 +46,11 @@ defmodule Lantern.System.Caddy do
   def generate_config(%Project{type: :proxy} = project) do
     port = project.port || raise "Proxy project #{project.name} has no assigned port"
 
-    base = """
+    """
     #{project.domain} {
       reverse_proxy 127.0.0.1:#{port}
     }
     """
-
-    base
   end
 
   def generate_config(%Project{type: :static} = project) do
@@ -90,8 +93,8 @@ defmodule Lantern.System.Caddy do
   end
 
   @doc """
-  Writes a project's Caddy config file. Requires elevated privileges.
-  Returns :ok or {:error, reason}.
+  Writes a project's Caddy config file.
+  sites.d is owned by the daemon user, so no privilege escalation needed.
   """
   def write_config(%Project{} = project) do
     config = generate_config(project)
@@ -102,8 +105,22 @@ defmodule Lantern.System.Caddy do
 
       content ->
         path = config_path(project.name)
-        run_privileged("mkdir", ["-p", @sites_dir])
-        run_privileged_write(path, content)
+
+        case File.write(path, content) do
+          :ok ->
+            :ok
+
+          {:error, :enoent} ->
+            {:error,
+             "#{@sites_dir} does not exist. Run 'lantern init' or reinstall the package."}
+
+          {:error, :eacces} ->
+            {:error,
+             "Permission denied writing to #{@sites_dir}. Run 'lantern init' to fix ownership."}
+
+          {:error, reason} ->
+            {:error, "Failed to write config: #{inspect(reason)}"}
+        end
     end
   end
 
@@ -112,25 +129,44 @@ defmodule Lantern.System.Caddy do
   """
   def remove_config(project_name) do
     path = config_path(project_name)
-    run_privileged("rm", ["-f", path])
+
+    case File.rm(path) do
+      :ok -> :ok
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, "Failed to remove #{path}: #{inspect(reason)}"}
+    end
   end
 
   @doc """
   Reloads the Caddy service to apply config changes.
   """
   def reload do
-    run_privileged("systemctl", ["reload", "caddy"])
+    Privilege.sudo("systemctl", ["reload", "caddy"])
   end
 
   @doc """
-  Writes the base Caddyfile if it doesn't exist.
+  Writes the base Caddyfile and creates sites.d with user ownership.
+  Called during `lantern init`. Uses sudo for privileged paths.
   """
   def ensure_base_config do
-    run_privileged("mkdir", ["-p", @sites_dir])
+    user = System.get_env("USER", "root")
 
-    case File.exists?(@caddyfile_path) do
-      true -> :ok
-      false -> run_privileged_write(@caddyfile_path, base_caddyfile())
+    # Create sites.d and recursively assign ownership so upgrades from
+    # root-owned configs become writable by the daemon user.
+    with :ok <- Privilege.sudo("mkdir", ["-p", @sites_dir]),
+         :ok <- Privilege.sudo("chown", ["-R", user, @sites_dir]) do
+      # Write base Caddyfile if it doesn't have our import
+      needs_write =
+        case File.read(@caddyfile_path) do
+          {:ok, content} -> not String.contains?(content, "import #{@sites_dir}")
+          {:error, _} -> true
+        end
+
+      if needs_write do
+        Privilege.sudo_write(@caddyfile_path, base_caddyfile())
+      else
+        :ok
+      end
     end
   end
 
@@ -146,29 +182,15 @@ defmodule Lantern.System.Caddy do
     _ -> false
   end
 
-  # Private helpers
-
-  defp run_privileged(cmd, args) do
-    System.cmd("pkexec", [cmd | args], stderr_to_stdout: true)
-  rescue
-    _ -> {:error, "Failed to run privileged command: #{cmd}"}
-  end
-
-  defp run_privileged_write(path, content) do
-    # Write via tee with pkexec
-    tmp_path = Path.join(System.tmp_dir!(), "lantern_caddy_#{:rand.uniform(100_000)}")
-    File.write!(tmp_path, content)
-
-    case System.cmd("pkexec", ["cp", tmp_path, path], stderr_to_stdout: true) do
-      {_, 0} ->
-        File.rm(tmp_path)
-        :ok
-
-      {output, _} ->
-        File.rm(tmp_path)
-        {:error, "Failed to write #{path}: #{output}"}
+  @doc """
+  Checks if the Caddy systemd service exists.
+  """
+  def service_exists? do
+    case System.cmd("systemctl", ["cat", "caddy"], stderr_to_stdout: true) do
+      {_, 0} -> true
+      _ -> false
     end
   rescue
-    e -> {:error, "Failed to write #{path}: #{inspect(e)}"}
+    _ -> false
   end
 end

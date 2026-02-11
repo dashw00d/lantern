@@ -14,9 +14,10 @@ linux:
   icon: resources/icon.png
 deb:
   depends:
-    - gconf2
-    - gconf-service
     - libnotify4
-    - libappindicator1
     - libxtst6
     - libnss3
+    - libgtk-3-0
+    - libgbm1
+    - libasound2
+    - libxss1

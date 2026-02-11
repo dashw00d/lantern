@@ -7,7 +7,7 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
 
   // Local form state
-  const [tld, setTld] = useState(settings?.tld || '.test');
+  const [tld, setTld] = useState(settings?.tld || '.glow');
   const [phpSocket, setPhpSocket] = useState(
     settings?.php_fpm_socket || '/run/php/php8.3-fpm.sock'
   );
@@ -20,7 +20,7 @@ export function Settings() {
   const [newRoot, setNewRoot] = useState('');
 
   // Sync from server when settings load
-  if (settings && tld === '.test' && settings.tld !== '.test') {
+  if (settings && tld === '.glow' && settings.tld !== '.glow') {
     setTld(settings.tld);
     setPhpSocket(settings.php_fpm_socket);
     setCaddyMode(settings.caddy_mode);

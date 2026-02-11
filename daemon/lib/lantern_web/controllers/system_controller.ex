@@ -10,15 +10,29 @@ defmodule LanternWeb.SystemController do
   end
 
   def init(conn, _params) do
-    results = %{
-      dns: run_init_step(:dns, fn -> DNS.setup() end),
-      tls: run_init_step(:tls, fn -> TLS.trust() end),
-      caddy: run_init_step(:caddy, fn -> Caddy.ensure_base_config() end)
-    }
+    if Caddy.installed?() do
+      results = %{
+        dns: run_init_step(:dns, fn -> DNS.setup() end),
+        tls: run_init_step(:tls, fn -> TLS.trust() end),
+        caddy: run_init_step(:caddy, fn -> Caddy.ensure_base_config() end)
+      }
 
-    status = if Enum.all?(Map.values(results), &(&1 == :ok)), do: :ok, else: :partial
+      status = if Enum.all?(Map.values(results), &(&1 == :ok)), do: :ok, else: :partial
 
-    json(conn, %{data: %{status: status, results: results}})
+      json(conn, %{data: %{status: status, results: results}})
+    else
+      conn
+      |> put_status(:unprocessable_entity)
+      |> json(%{
+        error: "caddy_not_installed",
+        message:
+          "Caddy is not installed. Install it first:\n" <>
+            "  sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl\n" <>
+            "  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg\n" <>
+            "  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list\n" <>
+            "  sudo apt update && sudo apt install caddy"
+      })
+    end
   end
 
   def show_settings(conn, _params) do

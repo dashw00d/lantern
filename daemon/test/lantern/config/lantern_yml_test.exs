@@ -7,13 +7,13 @@ defmodule Lantern.Config.LanternYmlTest do
     test "parses a basic lantern.yml" do
       yaml = """
       type: proxy
-      domain: myapp.test
+      domain: myapp.glow
       root: public
       """
 
       assert {:ok, attrs} = LanternYml.parse_string(yaml)
       assert attrs.type == :proxy
-      assert attrs.domain == "myapp.test"
+      assert attrs.domain == "myapp.glow"
       assert attrs.root == "public"
     end
 
@@ -51,14 +51,14 @@ defmodule Lantern.Config.LanternYmlTest do
       type: proxy
       routing:
         aliases:
-          - myapp-alt.test
+          - myapp-alt.glow
         websocket: true
         paths:
           "/api": "127.0.0.1:8000"
       """
 
       assert {:ok, attrs} = LanternYml.parse_string(yaml)
-      assert attrs.routing.aliases == ["myapp-alt.test"]
+      assert attrs.routing.aliases == ["myapp-alt.glow"]
       assert attrs.routing.websocket == true
       assert attrs.routing.paths == %{"/api" => "127.0.0.1:8000"}
     end
@@ -82,9 +82,9 @@ defmodule Lantern.Config.LanternYmlTest do
 
   describe "interpolate/2" do
     test "interpolates variables" do
-      vars = %{"PORT" => 41001, "DOMAIN" => "myapp.test"}
+      vars = %{"PORT" => 41001, "DOMAIN" => "myapp.glow"}
       result = LanternYml.interpolate("pnpm dev --port ${PORT} --host ${DOMAIN}", vars)
-      assert result == "pnpm dev --port 41001 --host myapp.test"
+      assert result == "pnpm dev --port 41001 --host myapp.glow"
     end
 
     test "handles nil string" do

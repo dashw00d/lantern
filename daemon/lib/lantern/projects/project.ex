@@ -47,10 +47,10 @@ defmodule Lantern.Projects.Project do
 
   @doc """
   Creates a new project struct with sensible defaults.
-  The domain defaults to `<name>.test` using the configured TLD.
+  The domain defaults to `<name>.glow` using the configured TLD.
   """
   def new(attrs) when is_map(attrs) do
-    tld = Application.get_env(:lantern, :tld, ".test")
+    tld = Application.get_env(:lantern, :tld, ".glow")
     %{name: _, path: _} = attrs
     name = attrs.name
 

@@ -1,6 +1,6 @@
 # Lantern
 
-**Valet for Linux.** A blazing-fast local development environment manager that gives every project its own `.test` domain with automatic HTTPS — no more `localhost:3000`.
+**Valet for Linux.** A blazing-fast local development environment manager that gives every project its own `.glow` domain with automatic HTTPS — no more `localhost:3000`.
 
 Lantern auto-detects your projects (Laravel, Node, Python, static sites, anything), wires up TLS certificates, reverse proxies, DNS, and shared services — then gets out of your way. Manage everything from the CLI, system tray, or a full desktop GUI.
 
@@ -9,7 +9,7 @@ Lantern auto-detects your projects (Laravel, Node, Python, static sites, anythin
 ## Features
 
 - **Automatic project detection** — drop a project in `~/sites` and Lantern figures out what it is (Laravel, Vite, FastAPI, PHP, static, etc.)
-- **`.test` domains with HTTPS** — every project gets `project-name.test` with a trusted TLS certificate, powered by Caddy
+- **`.glow` domains with HTTPS** — every project gets `project-name.glow` with a trusted TLS certificate, powered by Caddy
 - **Shared services** — Mailpit, Redis, Postgres managed as toggleable services
 - **System tray** — start/stop projects and services without opening anything
 - **Desktop GUI** — full dashboard with real-time status, logs, and settings
@@ -18,16 +18,19 @@ Lantern auto-detects your projects (Laravel, Node, Python, static sites, anythin
 
 ## Install
 
-Download the latest `.deb` from [Releases](https://github.com/your-username/lantern/releases):
+The installer handles everything — Caddy, dnsmasq, DNS, TLS trust, and the daemon:
 
 ```bash
-sudo dpkg -i lantern_0.1.0_amd64.deb
+git clone https://github.com/your-username/lantern.git
+cd lantern
+bash packaging/build-deb.sh
+sudo bash install.sh
 ```
 
-Then start the daemon:
+Or if you already have the `.deb`:
 
 ```bash
-sudo systemctl enable --now lanternd
+sudo bash install.sh lantern_0.1.0_amd64.deb
 ```
 
 That's it. Open **Lantern** from your app menu or use the CLI:
@@ -45,9 +48,9 @@ lantern services     # see shared services
  You                    Lantern                     Your Projects
 ─────                  ─────────                   ───────────────
 lantern start myapp → daemon allocates port    → starts dev server
-                       generates Caddy config  → myapp.test:443
-                       writes DNS resolution   → resolves .test TLD
-                       ✓ https://myapp.test ready
+                       generates Caddy config  → myapp.glow:443
+                       writes DNS resolution   → resolves .glow TLD
+                       ✓ https://myapp.glow ready
 ```
 
 Lantern runs a lightweight daemon (Elixir/Phoenix) on port `4777` that orchestrates:
@@ -55,7 +58,7 @@ Lantern runs a lightweight daemon (Elixir/Phoenix) on port `4777` that orchestra
 | Component | Role |
 |-----------|------|
 | **Caddy** | Reverse proxy + automatic TLS certificates |
-| **systemd-resolved** | Local `.test` DNS resolution |
+| **dnsmasq** | Local `.glow` DNS resolution |
 | **Process supervisor** | Starts/stops dev servers with port allocation |
 
 The CLI, desktop app, and system tray are all thin clients that talk to the daemon API.
@@ -113,8 +116,7 @@ bash packaging/build-deb.sh
 This compiles the Elixir release, builds the Electron app, and produces a `.deb` in the project root:
 
 ```bash
-sudo dpkg -i lantern_0.1.0_amd64.deb
-sudo systemctl enable --now lanternd
+sudo bash install.sh
 ```
 
 ### Development

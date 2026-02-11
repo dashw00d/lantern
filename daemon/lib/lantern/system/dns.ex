@@ -1,14 +1,16 @@
 defmodule Lantern.System.DNS do
   @moduledoc """
-  Manages DNS resolution for .test domains via dnsmasq/NetworkManager.
+  Manages DNS resolution for .glow domains via dnsmasq/NetworkManager.
   """
+
+  alias Lantern.System.Privilege
 
   @dnsmasq_conf "/etc/NetworkManager/dnsmasq.d/lantern.conf"
 
   @doc """
-  Returns the dnsmasq config content for wildcard .test resolution.
+  Returns the dnsmasq config content for wildcard .glow resolution.
   """
-  def dnsmasq_config(tld \\ ".test") do
+  def dnsmasq_config(tld \\ ".glow") do
     # Strip leading dot if present
     tld = String.trim_leading(tld, ".")
     "address=/.#{tld}/127.0.0.1\n"
@@ -17,19 +19,19 @@ defmodule Lantern.System.DNS do
   @doc """
   Writes the dnsmasq configuration and restarts NetworkManager.
   """
-  def setup(tld \\ ".test") do
+  def setup(tld \\ ".glow") do
     config = dnsmasq_config(tld)
 
-    with :ok <- write_config(config),
-         :ok <- restart_network_manager() do
+    with :ok <- Privilege.sudo_write(@dnsmasq_conf, config),
+         :ok <- Privilege.sudo("systemctl", ["restart", "NetworkManager"]) do
       :ok
     end
   end
 
   @doc """
-  Verifies that .test domains resolve to 127.0.0.1.
+  Verifies that .glow domains resolve to 127.0.0.1.
   """
-  def verify(domain \\ "test-verify.test") do
+  def verify(domain \\ "test-verify.glow") do
     case System.cmd("dig", ["+short", domain, "@127.0.0.1"], stderr_to_stdout: true) do
       {output, 0} ->
         if String.contains?(String.trim(output), "127.0.0.1") do
@@ -76,33 +78,5 @@ defmodule Lantern.System.DNS do
       config_exists: File.exists?(@dnsmasq_conf),
       network_manager_dnsmasq: network_manager_dnsmasq?()
     }
-  end
-
-  # Private helpers
-
-  defp write_config(content) do
-    tmp_path = Path.join(System.tmp_dir!(), "lantern_dns_#{:rand.uniform(100_000)}")
-    File.write!(tmp_path, content)
-
-    case System.cmd("pkexec", ["cp", tmp_path, @dnsmasq_conf], stderr_to_stdout: true) do
-      {_, 0} ->
-        File.rm(tmp_path)
-        :ok
-
-      {output, _} ->
-        File.rm(tmp_path)
-        {:error, "Failed to write DNS config: #{String.trim(output)}"}
-    end
-  rescue
-    e -> {:error, "Failed to write DNS config: #{inspect(e)}"}
-  end
-
-  defp restart_network_manager do
-    case System.cmd("pkexec", ["systemctl", "restart", "NetworkManager"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      {output, _} -> {:error, "Failed to restart NetworkManager: #{String.trim(output)}"}
-    end
-  rescue
-    e -> {:error, "Failed to restart NetworkManager: #{inspect(e)}"}
   end
 end

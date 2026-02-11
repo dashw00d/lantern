@@ -82,22 +82,19 @@ defmodule Lantern.Projects.Manager do
     paths = Scanner.scan()
 
     new_projects =
-      Enum.reduce(paths, state.projects, fn path, acc ->
+      Enum.reduce(paths, %{}, fn path, acc ->
         name = Path.basename(path)
 
-        case Map.get(acc, name) do
+        case Map.get(state.projects, name) do
           nil ->
             # New project - detect it
             project = Detector.detect(path)
             Map.put(acc, name, project)
 
           existing ->
-            # Keep existing project, update path if needed
-            if existing.path != path do
-              Map.put(acc, name, %{existing | path: path})
-            else
-              acc
-            end
+            # Keep existing project data, update path if it moved
+            updated = if existing.path != path, do: %{existing | path: path}, else: existing
+            Map.put(acc, name, updated)
         end
       end)
 
@@ -265,10 +262,17 @@ defmodule Lantern.Projects.Manager do
   defp load_projects do
     case Store.get(:projects) do
       projects when is_map(projects) ->
-        Map.new(projects, fn {name, data} ->
+        projects
+        |> Enum.reduce(%{}, fn {name, data}, acc ->
           key = to_string(name)
           project = if is_struct(data, Project), do: data, else: Project.from_map(data)
-          {key, %{project | status: :stopped, pid: nil}}
+
+          if File.dir?(project.path) do
+            Map.put(acc, key, %{project | status: :stopped, pid: nil})
+          else
+            Logger.info("Dropping stale project #{key}: #{project.path} no longer exists")
+            acc
+          end
         end)
 
       _ ->

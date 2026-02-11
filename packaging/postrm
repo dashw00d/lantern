@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Remove sudoers file
+rm -f /etc/sudoers.d/lantern
+
+# Remove Caddy site configs written by Lantern
+rm -rf /etc/caddy/sites.d/
+
 systemctl daemon-reload
 
 update-desktop-database /usr/share/applications/ 2>/dev/null || true

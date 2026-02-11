@@ -71,7 +71,7 @@ check_daemon() {
         echo ""
         error "Cannot connect to Lantern daemon at ${LANTERN_HOST}"
         echo -e "  ${C_DIM}Is the daemon running? Start it with:${C_RESET}"
-        echo -e "  ${C_BOLD}  sudo systemctl start lantern${C_RESET}"
+        echo -e "  ${C_BOLD}  sudo systemctl start lanternd${C_RESET}"
         echo -e "  ${C_DIM}Or run in development mode:${C_RESET}"
         echo -e "  ${C_BOLD}  cd daemon && mix phx.server${C_RESET}"
         echo ""
@@ -88,10 +88,6 @@ api_raw() {
     local method="$1"
     local endpoint="$2"
     local data="${3:-}"
-    local tmpfile
-
-    tmpfile=$(mktemp)
-    trap "rm -f '$tmpfile'" RETURN
 
     local curl_args=(
         -s
@@ -150,20 +146,13 @@ api_quiet() {
     echo "$RESPONSE_BODY"
 }
 
-# Pretty-print JSON with jq if available, otherwise raw
-json_pp() {
-    if command -v jq &>/dev/null; then
-        jq '.' 2>/dev/null || cat
-    else
-        cat
-    fi
-}
 
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
 cmd_init() {
+    check_daemon
     info "Running one-time system setup..."
     echo ""
 
@@ -190,6 +179,7 @@ cmd_init() {
 }
 
 cmd_scan() {
+    check_daemon
     info "Scanning workspace for projects..."
     echo ""
 
@@ -636,7 +626,7 @@ cmd_help() {
     echo ""
     echo -e "  ${C_BOLD}Services${C_RESET}"
     echo -e "    services            List all services and their status"
-    echo -e "    mailpit <on|off>    Start or stop Mailpit"
+    echo -e "    mailpit <on|off>    Start or stop Mailpit (aliases: start, stop)"
     echo -e "    mailpit status      Show Mailpit status"
     echo -e "    mailpit open        Open Mailpit web UI"
     echo ""
@@ -647,7 +637,7 @@ cmd_help() {
     echo -e "  ${C_BOLD}Other${C_RESET}"
     echo -e "    help                Show this help message"
     echo -e "    version             Show version"
-    echo -e "    completions         Output shell completion script"
+    echo -e "    completions <shell> Output shell completions (bash, zsh, fish)"
     echo ""
     echo -e "  ${C_DIM}Daemon: ${LANTERN_HOST}${C_RESET}"
     echo -e "  ${C_DIM}Override with LANTERN_HOST env var${C_RESET}"
@@ -837,7 +827,8 @@ cat_fish_completions() {
 # Fish completions for Lantern
 
 function __lantern_projects
-    curl -s "$LANTERN_HOST/api/projects" 2>/dev/null | jq -r '.data[]?.name' 2>/dev/null; or true
+    set -l host (set -q LANTERN_HOST; and echo $LANTERN_HOST; or echo "http://127.0.0.1:4777")
+    curl -s "$host/api/projects" 2>/dev/null | jq -r '.data[]?.name' 2>/dev/null; or true
 end
 
 # Disable file completions
@@ -882,6 +873,12 @@ FISH_COMP
 main() {
     local cmd="${1:-help}"
     shift 2>/dev/null || true
+
+    # Validate required dependencies for non-help commands
+    case "$cmd" in
+        help|-h|--help|version|-v|--version|completions) ;;
+        *) need_cmd curl; need_cmd jq ;;
+    esac
 
     case "$cmd" in
         init)           cmd_init "$@" ;;

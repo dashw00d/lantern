@@ -19,7 +19,7 @@ defmodule Lantern.Projects.ProjectTest do
         Project.new(%{
           name: "myapp",
           path: "/home/ryan/sites/myapp",
-          domain: "myapp.test",
+          domain: "myapp.glow",
           type: :proxy,
           port: 41001,
           run_cmd: "pnpm dev --port ${PORT}",
@@ -74,9 +74,9 @@ defmodule Lantern.Projects.ProjectTest do
 
   describe "interpolate_cmd/2" do
     test "interpolates PORT and DOMAIN" do
-      project = Project.new(%{name: "myapp", path: "/home/ryan/sites/myapp", port: 41001, domain: "myapp.test"})
+      project = Project.new(%{name: "myapp", path: "/home/ryan/sites/myapp", port: 41001, domain: "myapp.glow"})
       result = Project.interpolate_cmd("pnpm dev --port ${PORT} --host ${DOMAIN}", project)
-      assert result == "pnpm dev --port 41001 --host myapp.test"
+      assert result == "pnpm dev --port 41001 --host myapp.glow"
     end
 
     test "handles nil command" do

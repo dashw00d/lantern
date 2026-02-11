@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Lantern
 Comment=Local development environment manager
-Exec=/opt/lantern/desktop/lantern-desktop
+Exec=/opt/lantern/desktop/lantern-desktop --no-sandbox
 Icon=lantern
 Type=Application
 Categories=Development;

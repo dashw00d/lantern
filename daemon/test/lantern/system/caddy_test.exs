@@ -10,13 +10,13 @@ defmodule Lantern.System.CaddyTest do
         Project.new(%{
           name: "laravel-app",
           path: "/home/ryan/sites/laravel-app",
-          domain: "laravel-app.test",
+          domain: "laravel-app.glow",
           type: :php,
           root: "public"
         })
 
       config = Caddy.generate_config(project)
-      assert config =~ "laravel-app.test {"
+      assert config =~ "laravel-app.glow {"
       assert config =~ "root * /home/ryan/sites/laravel-app/public"
       assert config =~ "php_fastcgi unix/"
       assert config =~ "file_server"
@@ -27,13 +27,13 @@ defmodule Lantern.System.CaddyTest do
         Project.new(%{
           name: "vite-app",
           path: "/home/ryan/sites/vite-app",
-          domain: "vite-app.test",
+          domain: "vite-app.glow",
           type: :proxy,
           port: 41001
         })
 
       config = Caddy.generate_config(project)
-      assert config =~ "vite-app.test {"
+      assert config =~ "vite-app.glow {"
       assert config =~ "reverse_proxy 127.0.0.1:41001"
     end
 
@@ -42,13 +42,13 @@ defmodule Lantern.System.CaddyTest do
         Project.new(%{
           name: "static-site",
           path: "/home/ryan/sites/static-site",
-          domain: "static-site.test",
+          domain: "static-site.glow",
           type: :static,
           root: "."
         })
 
       config = Caddy.generate_config(project)
-      assert config =~ "static-site.test {"
+      assert config =~ "static-site.glow {"
       assert config =~ "root * /home/ryan/sites/static-site/."
       assert config =~ "file_server"
     end
@@ -58,7 +58,7 @@ defmodule Lantern.System.CaddyTest do
         Project.new(%{
           name: "unknown",
           path: "/home/ryan/sites/unknown",
-          domain: "unknown.test",
+          domain: "unknown.glow",
           type: :unknown
         })
 
@@ -70,7 +70,7 @@ defmodule Lantern.System.CaddyTest do
         Project.new(%{
           name: "no-port",
           path: "/home/ryan/sites/no-port",
-          domain: "no-port.test",
+          domain: "no-port.glow",
           type: :proxy,
           port: nil
         })
@@ -87,13 +87,13 @@ defmodule Lantern.System.CaddyTest do
         Project.new(%{
           name: "ws-app",
           path: "/home/ryan/sites/ws-app",
-          domain: "ws-app.test",
+          domain: "ws-app.glow",
           type: :proxy,
           port: 41002
         })
 
       config = Caddy.generate_config_with_websocket(project)
-      assert config =~ "ws-app.test {"
+      assert config =~ "ws-app.glow {"
       assert config =~ "reverse_proxy 127.0.0.1:41002"
       assert config =~ "header_up Upgrade"
       assert config =~ "header_up Connection"

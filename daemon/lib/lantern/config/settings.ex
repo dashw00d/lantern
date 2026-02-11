@@ -8,7 +8,7 @@ defmodule Lantern.Config.Settings do
 
   @default_settings %{
     workspace_roots: [],
-    tld: ".test",
+    tld: ".glow",
     php_fpm_socket: "/run/php/php8.3-fpm.sock",
     caddy_mode: "files",
     state_dir: nil,
@@ -45,7 +45,7 @@ defmodule Lantern.Config.Settings do
       @default_settings
       |> Map.put(:state_dir, state_dir)
       |> Map.put(:workspace_roots, Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")]))
-      |> Map.put(:tld, Application.get_env(:lantern, :tld, ".test"))
+      |> Map.put(:tld, Application.get_env(:lantern, :tld, ".glow"))
       |> merge_from_file(settings_path)
 
     {:ok, %{settings: settings, path: settings_path}}
@@ -61,9 +61,16 @@ defmodule Lantern.Config.Settings do
     {:reply, Map.get(state.settings, key), state}
   end
 
+  @allowed_update_keys ~w(workspace_roots tld php_fpm_socket caddy_mode default_template active_profile)a
+
   @impl true
   def handle_call({:update, attrs}, _from, state) do
-    new_settings = Map.merge(state.settings, atomize_keys(attrs))
+    filtered =
+      attrs
+      |> atomize_keys()
+      |> Map.take(@allowed_update_keys)
+
+    new_settings = Map.merge(state.settings, filtered)
     save_to_file(new_settings, state.path)
     {:reply, :ok, %{state | settings: new_settings}}
   end
@@ -105,15 +112,22 @@ defmodule Lantern.Config.Settings do
     end
   end
 
-  defp atomize_keys(map) do
-    Map.new(map, fn
-      {key, value} when is_binary(key) ->
-        {String.to_existing_atom(key), value}
+  defp atomize_keys(map) when is_map(map) do
+    Enum.reduce(map, %{}, fn
+      {key, value}, acc when is_atom(key) ->
+        Map.put(acc, key, value)
 
-      {key, value} when is_atom(key) ->
-        {key, value}
+      {key, value}, acc when is_binary(key) ->
+        try do
+          Map.put(acc, String.to_existing_atom(key), value)
+        rescue
+          ArgumentError -> acc
+        end
+
+      _, acc ->
+        acc
     end)
-  rescue
-    ArgumentError -> map
   end
+
+  defp atomize_keys(_), do: %{}
 end

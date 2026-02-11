@@ -26,7 +26,7 @@ config :lantern, LanternWeb.Endpoint,
 # Lantern-specific configuration
 config :lantern,
   workspace_roots: String.split(System.get_env("LANTERN_WORKSPACES", Path.expand("~/sites")), ":"),
-  tld: System.get_env("LANTERN_TLD", ".test"),
+  tld: System.get_env("LANTERN_TLD", ".glow"),
   state_dir: System.get_env("LANTERN_STATE_DIR", Path.expand("~/.config/lantern")),
   php_fpm_socket: System.get_env("LANTERN_PHP_FPM_SOCKET", "/run/php/php8.3-fpm.sock"),
   port_range_start: String.to_integer(System.get_env("LANTERN_PORT_RANGE_START", "41000")),
