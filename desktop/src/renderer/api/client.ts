@@ -115,6 +115,13 @@ class LanternClient {
     );
   }
 
+  async resetProject(name: string): Promise<ApiResponse<Project>> {
+    return this.request(
+      'POST',
+      `/api/projects/${encodeURIComponent(name)}/reset`
+    );
+  }
+
   async updateProject(
     name: string,
     config: Partial<Project> & { new_name?: string }
@@ -319,6 +326,31 @@ class LanternClient {
     );
   }
 
+  async getProjectDiscovery(name: string): Promise<
+    ApiResponse<{
+      name: string;
+      docs_auto: Record<string, unknown>;
+      api_auto: Record<string, unknown>;
+      discovered_docs: DocEntry[];
+      discovered_endpoints: EndpointEntry[];
+      docs_available: DocEntry[];
+      endpoints_available: EndpointEntry[];
+      discovery: Record<string, unknown>;
+    }>
+  > {
+    return this.request(
+      'GET',
+      `/api/projects/${encodeURIComponent(name)}/discovery`
+    );
+  }
+
+  async refreshProjectDiscovery(name: string): Promise<ApiResponse<Project>> {
+    return this.request(
+      'POST',
+      `/api/projects/${encodeURIComponent(name)}/discovery/refresh`
+    );
+  }
+
   // Services
   async listServices(): Promise<ApiResponse<Service[]>> {
     return this.request('GET', '/api/services');
@@ -352,6 +384,16 @@ class LanternClient {
 
   async initSystem(): Promise<ApiResponse<{ status: string }>> {
     return this.request('POST', '/api/system/init');
+  }
+
+  async shutdownSystem(): Promise<
+    ApiResponse<{
+      status: 'ok' | 'partial';
+      projects: { status: 'ok' | 'error'; stopped_projects?: string[]; error?: string };
+      services: Record<string, 'ok' | { error: string }>;
+    }>
+  > {
+    return this.request('POST', '/api/system/shutdown');
   }
 
   async getSettings(): Promise<ApiResponse<Settings>> {

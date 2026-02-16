@@ -6,7 +6,10 @@ defmodule Lantern.MCP.Tools.SearchProjects do
   alias Lantern.Projects.{Manager, Project}
 
   schema do
-    field :query, :string, required: true, description: "Search query (matches name, description, tags)"
+    field(:query, :string,
+      required: true,
+      description: "Search query (matches name, description, tags)"
+    )
   end
 
   def execute(%{query: query}, frame) do

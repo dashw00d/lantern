@@ -7,8 +7,8 @@ defmodule Lantern.MCP.Tools.GetProjectDocs do
   alias Lantern.Projects.{Manager, DocServer}
 
   schema do
-    field :name, :string, required: true, description: "Project name"
-    field :path, :string, description: "Specific doc path to read (omit to list all)"
+    field(:name, :string, required: true, description: "Project name")
+    field(:path, :string, description: "Specific doc path to read (omit to list all)")
   end
 
   def execute(%{name: name} = params, frame) do

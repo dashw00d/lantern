@@ -15,8 +15,7 @@ defmodule LanternWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
-  socket "/socket", LanternWeb.UserSocket,
-    websocket: true
+  socket "/socket", LanternWeb.UserSocket, websocket: true
 
   # Serve at "/" the static files from "priv/static" directory.
   #

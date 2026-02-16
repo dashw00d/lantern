@@ -35,6 +35,7 @@ defmodule Lantern.SelfRegistration do
       Application.get_env(:lantern, LanternWeb.Endpoint, [])
       |> Keyword.get(:http, [])
       |> Keyword.get(:port, 4777)
+
     tld = Application.get_env(:lantern, :tld, ".glow")
 
     attrs = %{
@@ -70,7 +71,10 @@ defmodule Lantern.SelfRegistration do
   defp activate do
     case Manager.activate(@lantern_name) do
       {:ok, _project} ->
-        Logger.info("Lantern self-registration: activated (lantern#{Application.get_env(:lantern, :tld, ".glow")})")
+        Logger.info(
+          "Lantern self-registration: activated (lantern#{Application.get_env(:lantern, :tld, ".glow")})"
+        )
+
         :ok
 
       {:error, reason} ->
@@ -90,14 +94,47 @@ defmodule Lantern.SelfRegistration do
       %{method: "PATCH", path: "/api/projects/:name", description: "Patch project fields"},
       %{method: "DELETE", path: "/api/projects/:name", description: "Remove project"},
       %{method: "POST", path: "/api/projects/:name/activate", description: "Activate a project"},
-      %{method: "POST", path: "/api/projects/:name/deactivate", description: "Deactivate a project"},
+      %{
+        method: "POST",
+        path: "/api/projects/:name/deactivate",
+        description: "Deactivate a project"
+      },
       %{method: "POST", path: "/api/projects/:name/restart", description: "Restart a project"},
+      %{
+        method: "POST",
+        path: "/api/projects/:name/reset",
+        description: "Reset project from lantern manifest"
+      },
+      %{
+        method: "GET",
+        path: "/api/projects/:name/discovery",
+        description: "Get project discovery metadata"
+      },
+      %{
+        method: "POST",
+        path: "/api/projects/:name/discovery/refresh",
+        description: "Refresh project discovery"
+      },
+      %{
+        method: "POST",
+        path: "/api/projects/discovery/refresh",
+        description: "Refresh discovery for all projects"
+      },
       %{method: "GET", path: "/api/tools", description: "List registered tools"},
       %{method: "GET", path: "/api/tools/:id", description: "Get tool details"},
       %{method: "GET", path: "/api/tools/:id/docs", description: "Get tool documentation"},
       %{method: "GET", path: "/api/health", description: "Project health overview"},
       %{method: "GET", path: "/api/system/health", description: "System health status"},
-      %{method: "POST", path: "/api/system/init", description: "Initialize system (DNS, TLS, Caddy)"},
+      %{
+        method: "POST",
+        path: "/api/system/init",
+        description: "Initialize system (DNS, TLS, Caddy)"
+      },
+      %{
+        method: "POST",
+        path: "/api/system/shutdown",
+        description: "Deactivate all projects and stop managed services"
+      },
       %{method: "GET", path: "/api/system/settings", description: "Get settings"},
       %{method: "PUT", path: "/api/system/settings", description: "Update settings"},
       %{method: "GET", path: "/api/services", description: "List infrastructure services"},

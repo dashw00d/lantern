@@ -85,6 +85,40 @@ defmodule LanternWeb.ProjectControllerTest do
         File.rm_rf(scan_root)
       end)
     end
+
+    test "preserves manually registered projects inside workspace roots", %{conn: conn} do
+      {scanned_name, scan_root} = seed_scannable_project!("scan-preserve-in-root")
+      manual_name = "manual-in-root-#{System.unique_integer([:positive])}"
+      manual_path = Path.join(scan_root, scanned_name)
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => manual_name,
+          "path" => manual_path,
+          "type" => "proxy",
+          "kind" => "service"
+        })
+
+      assert %{"data" => %{"name" => ^manual_name, "path" => ^manual_path}} =
+               json_response(conn, 201)
+
+      conn = post(conn, "/api/projects/scan?include_hidden=true")
+      assert %{"data" => data} = json_response(conn, 200)
+
+      names = Enum.map(data, & &1["name"])
+      assert scanned_name in names
+      assert manual_name in names
+
+      manual_entry = Enum.find(data, fn item -> item["name"] == manual_name end)
+      assert manual_entry
+      assert manual_entry["kind"] == "service"
+
+      on_exit(fn ->
+        Manager.deregister(manual_name)
+        Manager.deregister(scanned_name)
+        File.rm_rf(scan_root)
+      end)
+    end
   end
 
   describe "GET /api/projects/:name" do
@@ -106,8 +140,11 @@ defmodule LanternWeb.ProjectControllerTest do
       db_name = "dep-db-#{System.unique_integer([:positive])}"
       api_name = "dep-api-#{System.unique_integer([:positive])}"
 
-      db_path = Path.join(System.tmp_dir!(), "lantern-dep-db-#{System.unique_integer([:positive])}")
-      api_path = Path.join(System.tmp_dir!(), "lantern-dep-api-#{System.unique_integer([:positive])}")
+      db_path =
+        Path.join(System.tmp_dir!(), "lantern-dep-db-#{System.unique_integer([:positive])}")
+
+      api_path =
+        Path.join(System.tmp_dir!(), "lantern-dep-api-#{System.unique_integer([:positive])}")
 
       File.mkdir_p!(db_path)
       File.mkdir_p!(api_path)
@@ -130,10 +167,15 @@ defmodule LanternWeb.ProjectControllerTest do
       assert %{"data" => %{"name" => ^api_name}} = json_response(conn, 201)
 
       conn = get(conn, "/api/projects/#{api_name}/dependencies")
-      assert %{"data" => %{"project" => ^api_name, "depends_on" => [^db_name]}} = json_response(conn, 200)
+
+      assert %{"data" => %{"project" => ^api_name, "depends_on" => [^db_name]}} =
+               json_response(conn, 200)
 
       conn = get(conn, "/api/projects/#{db_name}/dependents")
-      assert %{"data" => %{"project" => ^db_name, "depended_by" => depended_by}} = json_response(conn, 200)
+
+      assert %{"data" => %{"project" => ^db_name, "depended_by" => depended_by}} =
+               json_response(conn, 200)
+
       assert api_name in depended_by
 
       on_exit(fn ->
@@ -145,10 +187,248 @@ defmodule LanternWeb.ProjectControllerTest do
     end
   end
 
+  describe "POST /api/projects/:name/reset" do
+    test "reloads project fields from lantern manifest", %{conn: conn} do
+      name = "manifest-reset-#{System.unique_integer([:positive])}"
+      path = Path.join(System.tmp_dir!(), "lantern-reset-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(path)
+
+      File.write!(
+        Path.join(path, "lantern.yaml"),
+        """
+        kind: service
+        description: Manifest description
+        run:
+          cmd: npm run dev -- --port ${PORT}
+          cwd: .
+        tags:
+          - alpha
+          - beta
+        """
+      )
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => name,
+          "path" => path,
+          "description" => "Edited description",
+          "run_cmd" => "npm run custom",
+          "tags" => ["edited"]
+        })
+
+      assert %{"data" => %{"name" => ^name}} = json_response(conn, 201)
+
+      conn =
+        patch(conn, "/api/projects/#{name}", %{
+          "description" => "Edited again",
+          "run_cmd" => "npm run edited",
+          "tags" => ["edited", "manual"]
+        })
+
+      assert %{"data" => %{"description" => "Edited again"}} = json_response(conn, 200)
+
+      conn = post(conn, "/api/projects/#{name}/reset", %{})
+
+      assert %{"data" => data} = json_response(conn, 200)
+      assert data["name"] == name
+      assert data["description"] == "Manifest description"
+      assert data["run_cmd"] == "npm run dev -- --port ${PORT}"
+      assert data["run_cwd"] == "."
+      assert data["tags"] == ["alpha", "beta"]
+      assert data["detection"]["source"] == "config"
+
+      on_exit(fn ->
+        Manager.deregister(name)
+        File.rm_rf(path)
+      end)
+    end
+
+    test "returns 422 when no lantern manifest exists", %{conn: conn} do
+      name = "manifest-missing-#{System.unique_integer([:positive])}"
+
+      path =
+        Path.join(System.tmp_dir!(), "lantern-no-manifest-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(path)
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => name,
+          "path" => path
+        })
+
+      assert %{"data" => %{"name" => ^name}} = json_response(conn, 201)
+
+      conn = post(conn, "/api/projects/#{name}/reset", %{})
+      assert %{"error" => "manifest_not_found"} = json_response(conn, 422)
+
+      on_exit(fn ->
+        Manager.deregister(name)
+        File.rm_rf(path)
+      end)
+    end
+  end
+
   describe "POST /api/projects/:name/activate" do
     test "returns 404 for nonexistent project", %{conn: conn} do
       conn = post(conn, "/api/projects/nonexistent/activate")
       assert %{"error" => "not_found"} = json_response(conn, 404)
+    end
+
+    test "rejects proxy run_cmd without dynamic PORT to avoid conflicts", %{conn: conn} do
+      name = "port-conflict-#{System.unique_integer([:positive])}"
+
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "lantern-port-conflict-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(path)
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => name,
+          "path" => path,
+          "type" => "proxy",
+          "run_cmd" => "python -m http.server 8000"
+        })
+
+      assert %{"data" => %{"name" => ^name}} = json_response(conn, 201)
+
+      conn = post(conn, "/api/projects/#{name}/activate")
+      assert %{"error" => "activation_failed", "message" => message} = json_response(conn, 422)
+      assert message =~ "run_cmd must use ${PORT}"
+
+      on_exit(fn ->
+        Manager.deregister(name)
+        File.rm_rf(path)
+      end)
+    end
+
+    test "runs configured runtime start/stop commands on activate/deactivate", %{conn: conn} do
+      name = "runtime-cmds-#{System.unique_integer([:positive])}"
+
+      path =
+        Path.join(System.tmp_dir!(), "lantern-runtime-cmds-#{System.unique_integer([:positive])}")
+
+      start_marker = Path.join(path, ".lantern-started")
+      stop_marker = Path.join(path, ".lantern-stopped")
+
+      File.mkdir_p!(path)
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => name,
+          "path" => path,
+          "type" => "proxy",
+          "upstream_url" => "http://127.0.0.1:4777",
+          "deploy" => %{
+            "start" => "touch .lantern-started",
+            "stop" => "touch .lantern-stopped"
+          }
+        })
+
+      assert %{"data" => %{"name" => ^name}} = json_response(conn, 201)
+
+      conn = post(conn, "/api/projects/#{name}/activate")
+      assert %{"data" => %{"name" => ^name, "status" => "running"}} = json_response(conn, 200)
+      assert File.exists?(start_marker)
+
+      conn = post(conn, "/api/projects/#{name}/deactivate")
+      assert %{"data" => %{"name" => ^name, "status" => "stopped"}} = json_response(conn, 200)
+      assert File.exists?(stop_marker)
+
+      on_exit(fn ->
+        Manager.deregister(name)
+        File.rm_rf(path)
+      end)
+    end
+
+    test "returns 422 when runtime process exits before binding assigned port", %{conn: conn} do
+      name = "startup-fail-#{System.unique_integer([:positive])}"
+
+      path =
+        Path.join(System.tmp_dir!(), "lantern-startup-fail-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(path)
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => name,
+          "path" => path,
+          "type" => "proxy",
+          "run_cmd" => "nonexistent_cmd_${PORT}"
+        })
+
+      assert %{"data" => %{"name" => ^name}} = json_response(conn, 201)
+
+      conn = post(conn, "/api/projects/#{name}/activate")
+      assert %{"error" => "activation_failed", "message" => message} = json_response(conn, 422)
+      assert message =~ "runtime"
+
+      on_exit(fn ->
+        Manager.deregister(name)
+        File.rm_rf(path)
+      end)
+    end
+
+    test "deactivate stops run_cmd listener for proxy project", %{conn: conn} do
+      name = "runner-stop-#{System.unique_integer([:positive])}"
+
+      path =
+        Path.join(System.tmp_dir!(), "lantern-runner-stop-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(path)
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => name,
+          "path" => path,
+          "type" => "proxy",
+          "run_cmd" => "python3 -m http.server ${PORT}"
+        })
+
+      assert %{"data" => %{"name" => ^name}} = json_response(conn, 201)
+
+      conn = post(conn, "/api/projects/#{name}/activate")
+      assert %{"data" => %{"status" => "running", "port" => port}} = json_response(conn, 200)
+      assert is_integer(port)
+
+      assert {:ok, socket} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 250)
+      :gen_tcp.close(socket)
+
+      conn = post(conn, "/api/projects/#{name}/deactivate")
+      assert %{"data" => %{"status" => "stopped", "port" => nil}} = json_response(conn, 200)
+
+      assert_eventually_port_closed(port)
+
+      on_exit(fn ->
+        Manager.deregister(name)
+        File.rm_rf(path)
+      end)
+    end
+  end
+
+  defp assert_eventually_port_closed(port, remaining_attempts \\ 20)
+
+  defp assert_eventually_port_closed(_port, 0) do
+    flunk("expected listener to stop but port stayed open")
+  end
+
+  defp assert_eventually_port_closed(port, remaining_attempts) do
+    case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 200) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+
+        receive do
+        after
+          100 -> assert_eventually_port_closed(port, remaining_attempts - 1)
+        end
+
+      {:error, _reason} ->
+        :ok
     end
   end
 
@@ -289,8 +569,11 @@ defmodule LanternWeb.ProjectControllerTest do
       name = "rename-src-#{System.unique_integer([:positive])}"
       new_name = "rename-dst-#{System.unique_integer([:positive])}"
 
-      path = Path.join(System.tmp_dir!(), "lantern-rename-src-#{System.unique_integer([:positive])}")
-      new_path = Path.join(System.tmp_dir!(), "lantern-rename-dst-#{System.unique_integer([:positive])}")
+      path =
+        Path.join(System.tmp_dir!(), "lantern-rename-src-#{System.unique_integer([:positive])}")
+
+      new_path =
+        Path.join(System.tmp_dir!(), "lantern-rename-dst-#{System.unique_integer([:positive])}")
 
       File.mkdir_p!(path)
       File.mkdir_p!(new_path)
@@ -340,8 +623,14 @@ defmodule LanternWeb.ProjectControllerTest do
     File.mkdir_p!(project_path)
 
     File.write!(
-      Path.join(project_path, "package.json"),
-      ~s({"name":"sample","dependencies":{"vite":"^6.0.0"}})
+      Path.join(project_path, "lantern.yaml"),
+      """
+      name: #{project_name}
+      kind: service
+      type: proxy
+      run:
+        cmd: npm run dev -- --port ${PORT}
+      """
     )
 
     :ok = Settings.update(%{workspace_roots: [tmp_root]})

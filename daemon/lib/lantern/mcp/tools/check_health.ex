@@ -6,7 +6,7 @@ defmodule Lantern.MCP.Tools.CheckHealth do
   alias Lantern.Health.Checker
 
   schema do
-    field :name, :string, description: "Project name (omit for all projects)"
+    field(:name, :string, description: "Project name (omit for all projects)")
   end
 
   def execute(params, frame) do

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { getLanternBridge } from '../../lib/electron';
+import { getLanternBridge, isElectronRuntime } from '../../lib/electron';
 import type { EntryCategory, EntryMode } from '../../lib/project-helpers';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -67,7 +67,9 @@ export function EntryForm({
     if (!bridge) {
       addToast({
         type: 'warning',
-        message: 'Folder picker is only available in the desktop app. Enter the path manually.',
+        message: isElectronRuntime()
+          ? 'Desktop bridge is unavailable. Restart Lantern and try again, or enter the path manually.'
+          : 'Folder picker is only available in the desktop app. Enter the path manually.',
       });
       return;
     }

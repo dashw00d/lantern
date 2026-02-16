@@ -56,10 +56,11 @@ export function DeployTab({ project }: TabProps) {
         <CardContent>
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <Rocket className="h-4 w-4" />
-            Deploy Commands
+            Runtime Commands
           </h3>
           <p className="mb-4 text-xs text-muted-foreground">
-            Production deploy commands from lantern.yaml (separate from local dev Start/Stop).
+            Optional command overrides from lantern.yaml. If start/stop are set,
+            Lantern runs them during normal Start/Stop too.
           </p>
 
           <dl className="space-y-2 text-sm">

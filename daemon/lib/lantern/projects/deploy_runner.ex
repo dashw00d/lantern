@@ -1,6 +1,6 @@
 defmodule Lantern.Projects.DeployRunner do
   @moduledoc """
-  Stateless module for executing deploy shell commands defined in lantern.yaml.
+  Stateless module for executing runtime shell commands defined in lantern.yaml.
   Commands come only from project configuration — never accepted via HTTP input.
   """
 

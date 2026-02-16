@@ -56,6 +56,26 @@ defmodule Lantern.Projects.Detector do
   end
 
   @doc """
+  Loads project configuration strictly from `lantern.yaml`/`lantern.yml`.
+  Returns `{:ok, project}` when manifest exists and parses, otherwise an error.
+  """
+  def detect_from_manifest(path, name \\ nil) do
+    resolved_name =
+      if is_binary(name) and String.trim(name) != "", do: name, else: Path.basename(path)
+
+    case find_config_file(path) do
+      nil ->
+        {:error, :manifest_not_found}
+
+      config_path ->
+        case LanternYml.parse(config_path) do
+          {:ok, attrs} -> {:ok, LanternYml.to_project(attrs, resolved_name, path)}
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  @doc """
   Detects the package manager used in a project by checking lockfiles.
   """
   def detect_package_manager(path) do

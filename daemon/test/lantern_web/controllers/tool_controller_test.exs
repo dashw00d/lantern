@@ -1,6 +1,7 @@
 defmodule LanternWeb.ToolControllerTest do
   use LanternWeb.ConnCase
 
+  alias Lantern.Config.Settings
   alias Lantern.Projects.Manager
 
   describe "GET /api/tools" do
@@ -84,12 +85,62 @@ defmodule LanternWeb.ToolControllerTest do
         File.rm_rf(hidden_path)
       end)
     end
+
+    test "keeps manually registered in-root tools after scan", %{conn: conn} do
+      previous_roots = Settings.get(:workspace_roots)
+
+      tmp_root =
+        Path.join(
+          System.tmp_dir!(),
+          "lantern-tool-scan-root-#{System.unique_integer([:positive])}"
+        )
+
+      workspace_project = "workspace-app-#{System.unique_integer([:positive])}"
+      workspace_project_path = Path.join(tmp_root, workspace_project)
+      manual_name = "manual-tool-#{System.unique_integer([:positive])}"
+
+      File.mkdir_p!(workspace_project_path)
+
+      File.write!(
+        Path.join(workspace_project_path, "lantern.yaml"),
+        "name: #{workspace_project}\n"
+      )
+
+      :ok = Settings.update(%{workspace_roots: [tmp_root]})
+
+      conn =
+        post(conn, "/api/projects", %{
+          "name" => manual_name,
+          "path" => workspace_project_path,
+          "kind" => "service",
+          "type" => "proxy"
+        })
+
+      assert %{"data" => %{"name" => ^manual_name}} = json_response(conn, 201)
+
+      conn = post(conn, "/api/projects/scan?include_hidden=true")
+      assert %{"data" => _} = json_response(conn, 200)
+
+      conn = get(conn, "/api/tools?include_hidden=true")
+      assert %{"data" => data} = json_response(conn, 200)
+      assert Enum.any?(data, fn item -> item["name"] == manual_name end)
+
+      on_exit(fn ->
+        :ok = Settings.update(%{workspace_roots: previous_roots})
+        Manager.deregister(manual_name)
+        Manager.deregister(workspace_project)
+        File.rm_rf(tmp_root)
+      end)
+    end
   end
 
   describe "GET /api/tools/:id" do
     test "returns tool detail with routing and path aliases", %{conn: conn} do
       name = "detail-tool-#{System.unique_integer([:positive])}"
-      path = Path.join(System.tmp_dir!(), "lantern-tool-detail-#{System.unique_integer([:positive])}")
+
+      path =
+        Path.join(System.tmp_dir!(), "lantern-tool-detail-#{System.unique_integer([:positive])}")
+
       File.mkdir_p!(path)
 
       conn =
@@ -125,7 +176,13 @@ defmodule LanternWeb.ToolControllerTest do
 
     test "supports detail lookups when list is filtered to project kind", %{conn: conn} do
       name = "detail-project-kind-#{System.unique_integer([:positive])}"
-      path = Path.join(System.tmp_dir!(), "lantern-tool-project-kind-#{System.unique_integer([:positive])}")
+
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "lantern-tool-project-kind-#{System.unique_integer([:positive])}"
+        )
+
       File.mkdir_p!(path)
 
       conn =
@@ -175,6 +232,7 @@ defmodule LanternWeb.ToolControllerTest do
       assert %{"data" => %{"name" => ^name}} = json_response(conn, 201)
 
       conn = get(conn, "/api/tools/#{name}/docs")
+
       assert %{"data" => %{"name" => ^name, "id" => ^name, "tool_id" => ^name, "docs" => docs}} =
                json_response(conn, 200)
 

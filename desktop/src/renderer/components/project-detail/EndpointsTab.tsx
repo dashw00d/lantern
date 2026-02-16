@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import type { TabProps } from './types';
 
 export function EndpointsTab({ project }: TabProps) {
-  const endpoints = project.endpoints || [];
+  const endpoints = project.endpoints_available || project.endpoints || [];
 
   const riskColor = (risk?: string) => {
     switch (risk) {
@@ -56,6 +56,11 @@ export function EndpointsTab({ project }: TabProps) {
                 {ep.risk && (
                   <span className={cn('text-xs font-medium', riskColor(ep.risk))}>
                     {ep.risk}
+                  </span>
+                )}
+                {ep.source && (
+                  <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                    {ep.source}
                   </span>
                 )}
               </div>

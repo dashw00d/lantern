@@ -17,10 +17,11 @@ defmodule Lantern.MCP.Tools.GetPorts do
       Map.new(assignments, fn {name, port} ->
         project_health = Map.get(health, name, %{})
 
-        {name, %{
-          port: port,
-          health_status: Map.get(project_health, :status, "unknown")
-        }}
+        {name,
+         %{
+           port: port,
+           health_status: Map.get(project_health, :status, "unknown")
+         }}
       end)
 
     {:reply, Response.tool() |> Response.json(result), frame}

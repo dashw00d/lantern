@@ -6,7 +6,7 @@ defmodule Lantern.MCP.Tools.GetDependencies do
   alias Lantern.Projects.Manager
 
   schema do
-    field :name, :string, description: "Project name (omit for full graph)"
+    field(:name, :string, description: "Project name (omit for full graph)")
   end
 
   def execute(params, frame) do

@@ -1,0 +1,82 @@
+# Lantern project manifest example
+
+id: ghostgraph
+name: GhostGraph
+kind: service
+description: Distributed web extraction and API service
+
+type: proxy
+domain: ghostgraph.glow
+run:
+  cmd: uvicorn app.main:app --port ${PORT}
+  cwd: .
+  env:
+    APP_ENV: development
+
+tags:
+  - data
+  - scraping
+  - api
+
+base_url: http://127.0.0.1:8000
+health_endpoint: /health
+
+docs:
+  - README.md
+  - docs/ARCHITECTURE.md
+
+docs_auto:
+  enabled: true
+  patterns:
+    - README.md
+    - docs/**/*.md
+    - AGENTS.md
+  ignore:
+    - node_modules/**
+    - .git/**
+  max_files: 80
+  max_bytes: 1048576
+
+endpoints:
+  - method: POST
+    path: /api/jobs
+    description: Create a crawl job
+    category: Jobs
+    risk: medium
+
+api_auto:
+  enabled: true
+  # Optional explicit sources (URL or local file path)
+  sources:
+    - http://127.0.0.1:8000/openapi.json
+  # Candidate paths probed against base_url/upstream_url
+  candidates:
+    - /openapi.json
+    - /swagger.json
+    - /docs/openapi.json
+  timeout_ms: 2500
+  max_endpoints: 400
+
+# Runtime command overrides.
+# If `start` is set, Lantern uses it for normal Start instead of `run.cmd`.
+# If `stop` is set, Lantern runs it during normal Stop.
+# (Key name remains `deploy` for compatibility.)
+deploy:
+  start: systemctl --user start ghostgraph
+  stop: systemctl --user stop ghostgraph
+  restart: systemctl --user restart ghostgraph
+  logs: journalctl --user -u ghostgraph --no-pager -n 100
+  status: systemctl --user is-active ghostgraph
+
+routing:
+  triggers:
+    - scrape
+    - crawl
+    - extract data
+  risk: medium
+  requires_confirmation: false
+  max_concurrent: 1
+
+depends_on:
+  - redis
+  - postgres

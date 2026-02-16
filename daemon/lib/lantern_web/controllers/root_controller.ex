@@ -10,10 +10,12 @@ defmodule LanternWeb.RootController do
       description: "Lantern — local development environment manager",
       endpoints: %{
         projects: "/api/projects",
+        project_discovery: "/api/projects/:name/discovery",
         tools: "/api/tools",
         services: "/api/services",
         health: "/api/health",
         system: "/api/system/health",
+        shutdown: "/api/system/shutdown",
         settings: "/api/system/settings",
         templates: "/api/templates",
         profiles: "/api/profiles",

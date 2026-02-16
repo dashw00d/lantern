@@ -1,13 +1,13 @@
 defmodule Lantern.MCP.Tools.StopProject do
-  @moduledoc "Run deploy stop command for a project"
+  @moduledoc "Stop a project"
   use Hermes.Server.Component, type: :tool
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
-  alias Lantern.Projects.{Manager, DeployRunner}
+  alias Lantern.Projects.Manager
 
   schema do
-    field :name, :string, required: true, description: "Project name"
+    field(:name, :string, required: true, description: "Project name")
   end
 
   def execute(%{name: name}, frame) do
@@ -15,16 +15,14 @@ defmodule Lantern.MCP.Tools.StopProject do
       nil ->
         {:error, Error.execution("Project '#{name}' not found"), frame}
 
-      project ->
-        case DeployRunner.execute(project, :stop) do
-          {:ok, output} ->
-            {:reply, Response.tool() |> Response.text(output), frame}
+      _project ->
+        case Manager.deactivate(name) do
+          {:ok, updated_project} ->
+            msg = "Stopped #{updated_project.name} (status: #{updated_project.status})"
+            {:reply, Response.tool() |> Response.text(msg), frame}
 
-          {:error, %{output: output}} ->
-            {:error, Error.execution(output), frame}
-
-          {:error, msg} ->
-            {:error, Error.execution(msg), frame}
+          {:error, reason} ->
+            {:error, Error.execution(inspect(reason)), frame}
         end
     end
   end

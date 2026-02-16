@@ -12,7 +12,7 @@ import type { EditableTabProps } from './types';
 
 export function DocsTab({ project, onProjectUpdated }: EditableTabProps) {
   const addToast = useAppStore((s) => s.addToast);
-  const [docs, setDocs] = useState<DocEntry[]>(project.docs || []);
+  const [docs, setDocs] = useState<DocEntry[]>(project.docs_available || project.docs || []);
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -116,7 +116,9 @@ export function DocsTab({ project, onProjectUpdated }: EditableTabProps) {
                 >
                   <div className="font-mono text-xs">{doc.path}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    {doc.kind} {doc.size ? `(${(doc.size / 1024).toFixed(1)}KB)` : ''}
+                    {doc.kind}
+                    {doc.source ? ` • ${doc.source}` : ''}
+                    {doc.size ? ` • ${(doc.size / 1024).toFixed(1)}KB` : ''}
                   </div>
                 </button>
               ))}

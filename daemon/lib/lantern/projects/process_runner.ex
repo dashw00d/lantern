@@ -98,10 +98,22 @@ defmodule Lantern.Projects.ProcessRunner do
     Logger.info("Process #{state.project.name} exited with code #{exit_code}")
 
     if state.status == :running and state.retry_count < @max_retries do
-      backoff = @base_backoff_ms * :math.pow(2, state.retry_count) |> round()
-      Logger.info("Retrying #{state.project.name} in #{backoff}ms (attempt #{state.retry_count + 1}/#{@max_retries})")
+      backoff = (@base_backoff_ms * :math.pow(2, state.retry_count)) |> round()
+
+      Logger.info(
+        "Retrying #{state.project.name} in #{backoff}ms (attempt #{state.retry_count + 1}/#{@max_retries})"
+      )
+
       Process.send_after(self(), :retry, backoff)
-      {:noreply, %{state | status: :starting, retry_count: state.retry_count + 1, port_ref: nil, os_pid: nil}}
+
+      {:noreply,
+       %{
+         state
+         | status: :starting,
+           retry_count: state.retry_count + 1,
+           port_ref: nil,
+           os_pid: nil
+       }}
     else
       broadcast_status(state.project.name, :error)
       {:noreply, %{state | status: :error, port_ref: nil, os_pid: nil}}
@@ -134,15 +146,17 @@ defmodule Lantern.Projects.ProcessRunner do
     else
       cwd = resolve_cwd(project)
       env = build_env(project)
+      {spawn_cmd, spawn_args} = spawn_program_and_args(cmd)
 
       try do
         port =
-          Port.open({:spawn, cmd}, [
+          Port.open({:spawn_executable, spawn_cmd}, [
             :binary,
             :exit_status,
             :stderr_to_stdout,
             {:cd, cwd},
-            {:env, env}
+            {:env, env},
+            {:args, spawn_args}
           ])
 
         # Get the OS PID from the port info
@@ -171,21 +185,25 @@ defmodule Lantern.Projects.ProcessRunner do
     |> Enum.map(fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
   end
 
-  defp do_stop(%{os_pid: nil} = state), do: %{state | status: :stopped}
+  defp do_stop(%{os_pid: nil, port_ref: port_ref} = state) do
+    safe_close_port(port_ref)
+    %{state | status: :stopped, port_ref: nil}
+  end
 
   defp do_stop(%{os_pid: os_pid, port_ref: port_ref} = state) do
-    # Send SIGTERM
-    System.cmd("kill", ["-TERM", to_string(os_pid)], stderr_to_stdout: true)
+    # Stop the spawned process and wait for exit.
+    _ = System.cmd("kill", ["-TERM", to_string(os_pid)], stderr_to_stdout: true)
 
     # Wait for graceful shutdown
     receive do
       {^port_ref, {:exit_status, _}} -> :ok
     after
       @shutdown_timeout_ms ->
-        # Force kill
-        System.cmd("kill", ["-KILL", to_string(os_pid)], stderr_to_stdout: true)
+        # Force kill process.
+        _ = System.cmd("kill", ["-KILL", to_string(os_pid)], stderr_to_stdout: true)
     end
 
+    safe_close_port(port_ref)
     broadcast_status(state.project.name, :stopped)
     %{state | status: :stopped, port_ref: nil, os_pid: nil}
   rescue
@@ -228,5 +246,17 @@ defmodule Lantern.Projects.ProcessRunner do
 
   defp via(project_name) do
     {:via, Registry, {Lantern.ProcessRegistry, {:runner, project_name}}}
+  end
+
+  defp spawn_program_and_args(cmd) do
+    {~c"/bin/sh", ["-lc", cmd]}
+  end
+
+  defp safe_close_port(nil), do: :ok
+
+  defp safe_close_port(port_ref) do
+    Port.close(port_ref)
+  rescue
+    _ -> :ok
   end
 end

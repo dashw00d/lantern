@@ -5,7 +5,7 @@ defmodule Lantern.MCP.Prompts.DependencyTrace do
   alias Hermes.Server.Response
 
   schema do
-    field :name, :string, required: true, description: "Project name to trace dependencies for"
+    field(:name, :string, required: true, description: "Project name to trace dependencies for")
   end
 
   def get_messages(%{name: name}, frame) do

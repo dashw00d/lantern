@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { api } from '../../api/client';
 import { useAppStore } from '../../stores/appStore';
 import { categoryFromKind, kindFromCategory } from '../../lib/project-helpers';
+import { Button } from '../ui/Button';
 import { Card, CardContent } from '../ui/Card';
 import { EntryForm } from '../projects/EntryForm';
 import type { EntryFormValues } from '../projects/EntryForm';
@@ -9,6 +11,7 @@ import type { Project } from '../../types';
 
 export function EntryTab({ project, onProjectUpdated }: EditableTabProps) {
   const addToast = useAppStore((s) => s.addToast);
+  const [resetting, setResetting] = useState(false);
 
   const initialValues: Partial<EntryFormValues> = {
     name: project.name,
@@ -78,13 +81,42 @@ export function EntryTab({ project, onProjectUpdated }: EditableTabProps) {
     }
   };
 
+  const handleResetFromManifest = async () => {
+    setResetting(true);
+
+    try {
+      const res = await api.resetProject(project.name);
+      onProjectUpdated(res.data);
+      addToast({
+        type: 'success',
+        message: 'Project reset from lantern.yaml manifest',
+      });
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: `Failed to reset from manifest: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
         <CardContent>
-          <h3 className="mb-3 text-sm font-semibold">Entry Settings</h3>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold">Entry Settings</h3>
+            <Button
+              variant="secondary"
+              onClick={handleResetFromManifest}
+              disabled={resetting}
+            >
+              {resetting ? 'Resetting...' : 'Reset From YAML'}
+            </Button>
+          </div>
           <p className="mb-4 text-xs text-muted-foreground">
-            This mirrors the Add flow. You can edit identity, source, routing, docs, and tags here.
+            This mirrors the Add flow. You can edit identity, source, routing, docs, and tags here. Reset loads values from local lantern.yaml/lantern.yml without writing files.
           </p>
           <EntryForm
             key={project.name}

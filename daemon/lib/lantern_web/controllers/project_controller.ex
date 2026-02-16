@@ -55,41 +55,88 @@ defmodule LanternWeb.ProjectController do
   end
 
   def activate(conn, %{"name" => name}) do
-    case Manager.activate(name) do
-      {:ok, project} ->
+    case safe_manager_call(fn -> Manager.activate(name) end) do
+      {:ok, {:ok, project}} ->
         json(conn, %{data: Project.to_map(project)})
 
-      {:error, :not_found} ->
+      {:ok, {:error, :not_found}} ->
         conn
         |> put_status(:not_found)
         |> json(%{error: "not_found", message: "Project '#{name}' not found"})
 
-      {:error, reason} ->
+      {:ok, {:error, reason}} ->
         conn
         |> put_status(:unprocessable_entity)
+        |> json(%{error: "activation_failed", message: inspect(reason)})
+
+      {:error, :timeout} ->
+        conn
+        |> put_status(:gateway_timeout)
+        |> json(%{error: "activation_timeout", message: "Activation timed out"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:internal_server_error)
         |> json(%{error: "activation_failed", message: inspect(reason)})
     end
   end
 
   def deactivate(conn, %{"name" => name}) do
-    case Manager.deactivate(name) do
-      {:ok, project} ->
+    case safe_manager_call(fn -> Manager.deactivate(name) end) do
+      {:ok, {:ok, project}} ->
         json(conn, %{data: Project.to_map(project)})
 
-      {:error, :not_found} ->
+      {:ok, {:error, :not_found}} ->
         conn
         |> put_status(:not_found)
         |> json(%{error: "not_found", message: "Project '#{name}' not found"})
 
-      {:error, reason} ->
+      {:ok, {:error, reason}} ->
         conn
         |> put_status(:unprocessable_entity)
+        |> json(%{error: "deactivation_failed", message: inspect(reason)})
+
+      {:error, :timeout} ->
+        conn
+        |> put_status(:gateway_timeout)
+        |> json(%{error: "deactivation_timeout", message: "Deactivation timed out"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:internal_server_error)
         |> json(%{error: "deactivation_failed", message: inspect(reason)})
     end
   end
 
   def restart(conn, %{"name" => name}) do
-    case Manager.restart(name) do
+    case safe_manager_call(fn -> Manager.restart(name) end) do
+      {:ok, {:ok, project}} ->
+        json(conn, %{data: Project.to_map(project)})
+
+      {:ok, {:error, :not_found}} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "not_found", message: "Project '#{name}' not found"})
+
+      {:ok, {:error, reason}} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "restart_failed", message: inspect(reason)})
+
+      {:error, :timeout} ->
+        conn
+        |> put_status(:gateway_timeout)
+        |> json(%{error: "restart_timeout", message: "Restart timed out"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "restart_failed", message: inspect(reason)})
+    end
+  end
+
+  def reset(conn, %{"name" => name}) do
+    case Manager.reset_from_manifest(name) do
       {:ok, project} ->
         json(conn, %{data: Project.to_map(project)})
 
@@ -98,10 +145,28 @@ defmodule LanternWeb.ProjectController do
         |> put_status(:not_found)
         |> json(%{error: "not_found", message: "Project '#{name}' not found"})
 
+      {:error, :manifest_not_found} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          error: "manifest_not_found",
+          message: "No lantern.yaml or lantern.yml found for '#{name}'"
+        })
+
+      {:error, {:validation, reasons}} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "invalid_manifest", message: format_validation_errors(reasons)})
+
+      {:error, reason} when is_binary(reason) ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "reset_failed", message: reason})
+
       {:error, reason} ->
         conn
         |> put_status(:unprocessable_entity)
-        |> json(%{error: "restart_failed", message: inspect(reason)})
+        |> json(%{error: "reset_failed", message: inspect(reason)})
     end
   end
 
@@ -201,7 +266,57 @@ defmodule LanternWeb.ProjectController do
         |> json(%{error: "not_found", message: "Project '#{name}' not found"})
 
       project ->
-        json(conn, %{data: project.endpoints || []})
+        json(conn, %{data: Project.merged_endpoints(project)})
+    end
+  end
+
+  def discovery(conn, %{"name" => name}) do
+    case Manager.get(name) do
+      nil ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "not_found", message: "Project '#{name}' not found"})
+
+      project ->
+        json(conn, %{
+          data: %{
+            name: project.name,
+            docs_auto: project.docs_auto || %{},
+            api_auto: project.api_auto || %{},
+            discovered_docs: project.discovered_docs || [],
+            discovered_endpoints: project.discovered_endpoints || [],
+            docs_available: Project.merged_docs(project),
+            endpoints_available: Project.merged_endpoints(project),
+            discovery: project.discovery || %{}
+          }
+        })
+    end
+  end
+
+  def refresh_discovery(conn, %{"name" => name}) do
+    case Manager.refresh_discovery(name) do
+      {:ok, project} ->
+        json(conn, %{data: Project.to_map(project)})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "not_found", message: "Project '#{name}' not found"})
+    end
+  end
+
+  def refresh_discovery_all(conn, _params) do
+    case Manager.refresh_discovery(:all) do
+      {:ok, projects} ->
+        json(conn, %{
+          data: Enum.map(projects, &Project.to_map/1),
+          meta: %{count: length(projects)}
+        })
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "refresh_failed", message: inspect(reason)})
     end
   end
 
@@ -237,14 +352,14 @@ defmodule LanternWeb.ProjectController do
   @updatable_fields ~w(
     type domain path root run_cmd run_cwd run_env features template description
     kind base_url upstream_url health_endpoint repo_url tags enabled deploy docs
-    endpoints depends_on routing new_name
+    endpoints docs_auto api_auto depends_on routing new_name
   )a
 
   @updatable_field_strings Enum.map(@updatable_fields, &Atom.to_string/1)
 
   @create_optional_fields ~w(
     id description kind base_url upstream_url health_endpoint repo_url tags enabled
-    deploy docs endpoints depends_on type domain root run_cmd run_cwd run_env
+    deploy docs endpoints docs_auto api_auto depends_on type domain root run_cmd run_cwd run_env
     features template routing
   )
 
@@ -354,6 +469,8 @@ defmodule LanternWeb.ProjectController do
   defp normalize_field("deploy", value), do: normalize_deploy(value)
   defp normalize_field("docs", value), do: normalize_docs(value)
   defp normalize_field("endpoints", value), do: normalize_endpoints(value)
+  defp normalize_field("docs_auto", value), do: normalize_discovery_config(value, "docs_auto")
+  defp normalize_field("api_auto", value), do: normalize_discovery_config(value, "api_auto")
   defp normalize_field("routing", value), do: normalize_routing(value)
 
   defp normalize_field(field, value)
@@ -620,6 +737,39 @@ defmodule LanternWeb.ProjectController do
 
   defp normalize_routing(_), do: {:error, "Invalid value for 'routing'"}
 
+  defp normalize_discovery_config(nil, _field), do: {:ok, %{}}
+
+  defp normalize_discovery_config(value, _field) when is_map(value) do
+    normalized =
+      value
+      |> Enum.reduce(%{}, fn {key, current_value}, acc ->
+        normalized_key =
+          key
+          |> to_string()
+          |> String.trim()
+          |> String.downcase()
+
+        case normalized_key do
+          "enabled" -> Map.put(acc, :enabled, normalize_discovery_bool(current_value))
+          "patterns" -> Map.put(acc, :patterns, normalize_simple_string_list(current_value))
+          "ignore" -> Map.put(acc, :ignore, normalize_simple_string_list(current_value))
+          "sources" -> Map.put(acc, :sources, normalize_simple_string_list(current_value))
+          "candidates" -> Map.put(acc, :candidates, normalize_simple_string_list(current_value))
+          "max_files" -> Map.put(acc, :max_files, normalize_positive_int(current_value))
+          "max_bytes" -> Map.put(acc, :max_bytes, normalize_positive_int(current_value))
+          "timeout_ms" -> Map.put(acc, :timeout_ms, normalize_positive_int(current_value))
+          "max_endpoints" -> Map.put(acc, :max_endpoints, normalize_positive_int(current_value))
+          _ -> acc
+        end
+      end)
+      |> Enum.reject(fn {_key, current_value} -> is_nil(current_value) end)
+      |> Map.new()
+
+    {:ok, normalized}
+  end
+
+  defp normalize_discovery_config(_value, field), do: {:error, "Invalid value for '#{field}'"}
+
   defp normalize_simple_string_list(value) when is_list(value) do
     value
     |> Enum.map(&to_string/1)
@@ -628,6 +778,30 @@ defmodule LanternWeb.ProjectController do
   end
 
   defp normalize_simple_string_list(_), do: []
+
+  defp normalize_discovery_bool(value) when value in [true, 1, "1"], do: true
+  defp normalize_discovery_bool(value) when value in [false, 0, "0"], do: false
+
+  defp normalize_discovery_bool(value) when is_binary(value) do
+    case String.downcase(String.trim(value)) do
+      v when v in ["true", "yes", "on"] -> true
+      v when v in ["false", "no", "off"] -> false
+      _ -> nil
+    end
+  end
+
+  defp normalize_discovery_bool(_), do: nil
+
+  defp normalize_positive_int(value) when is_integer(value) and value > 0, do: value
+
+  defp normalize_positive_int(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} when int > 0 -> int
+      _ -> nil
+    end
+  end
+
+  defp normalize_positive_int(_), do: nil
 
   defp normalize_optional_string(nil, _field), do: {:ok, nil}
 
@@ -660,6 +834,16 @@ defmodule LanternWeb.ProjectController do
     do: Map.get(mapping, Atom.to_string(key))
 
   defp lookup_whitelist_key(_mapping, _key), do: nil
+
+  defp safe_manager_call(fun) do
+    {:ok, fun.()}
+  catch
+    :exit, {:timeout, _} ->
+      {:error, :timeout}
+
+    :exit, reason ->
+      {:error, reason}
+  end
 
   defp include_hidden?(params) when is_map(params) do
     case Map.get(params, "include_hidden") do

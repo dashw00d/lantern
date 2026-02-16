@@ -2,7 +2,7 @@
 
 **The [Laravel Valet](https://laravel.com/docs/valet) / [Laravel Herd](https://herd.laravel.com) experience, on Linux.** A local development environment manager that gives every project its own HTTPS domain — no more `localhost:3000`.
 
-Lantern auto-detects your projects (Laravel, Next.js, Vite, FastAPI, Django, PHP, static sites, anything), wires up TLS certificates, a reverse proxy, DNS, and shared services — then gets out of your way. Manage everything from the CLI, system tray, or a full desktop GUI.
+Lantern uses `lantern.yaml` manifests as the source of truth for scanned projects, wires up TLS certificates, a reverse proxy, DNS, and shared services — then gets out of your way. Manage everything from the CLI, system tray, or a full desktop GUI.
 
 > **If you've ever wished Valet or Herd existed for Linux, this is it.**
 
@@ -13,7 +13,7 @@ Lantern auto-detects your projects (Laravel, Next.js, Vite, FastAPI, Django, PHP
 | Pain | Lantern |
 |------|---------|
 | Juggling `localhost:3000`, `:3001`, `:8080`... | Every project gets `https://myapp.glow` |
-| Manually editing `/etc/hosts` or nginx configs | Zero-config — drop a project in `~/sites`, done |
+| Manually editing `/etc/hosts` or nginx configs | Manifest-first — add `lantern.yaml`, run scan, done |
 | No Valet/Herd on Linux | Built for Linux from the ground up |
 | `mkcert` + nginx + manual plumbing for local HTTPS | Automatic trusted TLS certificates via Caddy |
 | CLI-only tools with no GUI | Desktop app, system tray, **and** CLI |
@@ -21,7 +21,7 @@ Lantern auto-detects your projects (Laravel, Next.js, Vite, FastAPI, Django, PHP
 
 ## Features
 
-- **Automatic project detection** — drop a project in `~/sites` and Lantern detects the framework (Laravel, Symfony, Next.js, Nuxt, Remix, Vite, FastAPI, Django, Flask, PHP, static HTML)
+- **Manifest-first scanning** — `lantern scan` only imports folders with `lantern.yaml`/`lantern.yml`, keeping the registry clean and explicit
 - **Custom local domains with HTTPS** — every project gets `project-name.glow` with a trusted TLS certificate, powered by Caddy's automatic SSL
 - **Framework-agnostic** — works with any stack that runs a dev server or serves files. Not just PHP.
 - **Dev server management** — automatically starts your dev server (`next dev`, `vite`, `uvicorn`, etc.) with allocated ports
@@ -29,6 +29,7 @@ Lantern auto-detects your projects (Laravel, Next.js, Vite, FastAPI, Django, PHP
 - **System tray** — start/stop projects and services from the tray without opening anything
 - **Desktop GUI** — full dashboard with real-time status, logs, and settings
 - **CLI** — `lantern scan`, `lantern on myapp`, `lantern status` — everything scriptable
+- **MCP-native** — expose all project/tool context over MCP at `/mcp` and bootstrap clients with `lantern mcp install`
 - **Runs as a systemd daemon** — always on, survives reboots, zero overhead when idle
 - **Package manager detection** — automatically uses npm, pnpm, yarn, or bun based on your lockfile
 
@@ -80,7 +81,7 @@ The CLI, desktop app, and system tray are all thin clients that talk to the daem
 
 ## Supported Frameworks
 
-Lantern auto-detects these out of the box — no configuration needed:
+Lantern supports these stacks and can infer sane defaults from your manifest:
 
 | Framework | Type | How it's served |
 |-----------|------|-----------------|
@@ -96,7 +97,12 @@ Lantern auto-detects these out of the box — no configuration needed:
 | **Flask** | Python | Reverse proxy to `flask run` |
 | **Static HTML** | Static | Caddy file server |
 
-Need something else? Add a `lantern.yml` to any project to configure it manually.
+Need something else? Add a `lantern.yml` or `lantern.yaml` to any project to configure it manually.
+
+You can start from `lantern.yaml.example` at the repo root, including optional auto-discovery sections:
+
+- `docs_auto`: discover docs from globs (for example `docs/**/*.md`)
+- `api_auto`: pull OpenAPI specs from local files or running services (for example FastAPI `/openapi.json`)
 
 ## Compared To
 
@@ -176,6 +182,14 @@ Run the daemon and desktop app separately for development:
 
 ```bash
 sudo bash setup-dev.sh    # configures sudoers, Caddy, DNS
+```
+
+**Fast dev loop (no reinstall needed):**
+
+```bash
+bash dev-up.sh            # stops packaged runtime + starts source daemon
+# Ctrl+C to stop daemon
+bash dev-down.sh          # optional cleanup
 ```
 
 **Daemon:**

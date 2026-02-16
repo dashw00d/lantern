@@ -38,6 +38,11 @@ defmodule Lantern.Projects.Project do
     deploy: %{},
     docs: [],
     endpoints: [],
+    docs_auto: %{},
+    api_auto: %{},
+    discovered_docs: [],
+    discovered_endpoints: [],
+    discovery: %{},
     routing: nil,
     depends_on: []
   ]
@@ -70,6 +75,11 @@ defmodule Lantern.Projects.Project do
           deploy: map(),
           docs: [map()],
           endpoints: [map()],
+          docs_auto: map(),
+          api_auto: map(),
+          discovered_docs: [map()],
+          discovered_endpoints: [map()],
+          discovery: map(),
           routing: map() | nil,
           depends_on: [String.t()]
         }
@@ -81,7 +91,8 @@ defmodule Lantern.Projects.Project do
   @known_keys ~w(
     name path domain type status port run_cmd run_cwd run_env root features
     detection pid template id description kind base_url upstream_url health_endpoint
-    repo_url tags enabled registered_at deploy docs endpoints routing depends_on
+    repo_url tags enabled registered_at deploy docs endpoints docs_auto api_auto
+    discovered_docs discovered_endpoints discovery routing depends_on
   )a
 
   @known_key_map Map.new(@known_keys, fn key -> {Atom.to_string(key), key} end)
@@ -180,9 +191,81 @@ defmodule Lantern.Projects.Project do
       deploy: project.deploy,
       docs: project.docs,
       endpoints: project.endpoints,
+      docs_auto: project.docs_auto,
+      api_auto: project.api_auto,
+      discovered_docs: project.discovered_docs,
+      discovered_endpoints: project.discovered_endpoints,
+      docs_available: merged_docs(project),
+      endpoints_available: merged_endpoints(project),
+      discovery: project.discovery,
       routing: project.routing,
       depends_on: project.depends_on
     }
+  end
+
+  @doc """
+  Returns merged docs where manual entries win over discovered ones.
+  """
+  def merged_docs(%__MODULE__{} = project) do
+    manual_docs =
+      project.docs
+      |> List.wrap()
+      |> Enum.map(fn doc ->
+        doc
+        |> normalize_doc()
+        |> Map.put_new(:source, "manual")
+      end)
+
+    discovered_docs =
+      project.discovered_docs
+      |> List.wrap()
+      |> Enum.map(fn doc ->
+        doc
+        |> normalize_doc()
+        |> Map.put_new(:source, "discovered")
+      end)
+
+    manual_paths =
+      manual_docs
+      |> Enum.map(&Map.get(&1, :path))
+      |> Enum.reject(&is_nil/1)
+      |> MapSet.new()
+
+    manual_docs ++
+      Enum.reject(discovered_docs, fn doc -> MapSet.member?(manual_paths, doc.path) end)
+  end
+
+  @doc """
+  Returns merged endpoints where manual entries win over discovered ones.
+  """
+  def merged_endpoints(%__MODULE__{} = project) do
+    manual_endpoints =
+      project.endpoints
+      |> List.wrap()
+      |> Enum.map(fn endpoint ->
+        endpoint
+        |> normalize_endpoint()
+        |> Map.put_new(:source, "manual")
+      end)
+
+    discovered_endpoints =
+      project.discovered_endpoints
+      |> List.wrap()
+      |> Enum.map(fn endpoint ->
+        endpoint
+        |> normalize_endpoint()
+        |> Map.put_new(:source, "discovered")
+      end)
+
+    manual_pairs =
+      manual_endpoints
+      |> Enum.map(&endpoint_signature/1)
+      |> MapSet.new()
+
+    manual_endpoints ++
+      Enum.reject(discovered_endpoints, fn endpoint ->
+        MapSet.member?(manual_pairs, endpoint_signature(endpoint))
+      end)
   end
 
   @doc """
@@ -232,7 +315,8 @@ defmodule Lantern.Projects.Project do
 
   defp validate_upstream_url(errors, %{upstream_url: nil}), do: errors
 
-  defp validate_upstream_url(errors, %{upstream_url: upstream_url}) when is_binary(upstream_url) do
+  defp validate_upstream_url(errors, %{upstream_url: upstream_url})
+       when is_binary(upstream_url) do
     normalized = String.trim(upstream_url)
 
     case URI.parse(normalized) do
@@ -312,5 +396,55 @@ defmodule Lantern.Projects.Project do
 
   defp safe_to_kind_atom(str) do
     Map.get(@valid_kind_map, str)
+  end
+
+  defp normalize_doc(doc) when is_map(doc) do
+    path = map_value(doc, "path", :path)
+    kind = map_value(doc, "kind", :kind) || "unknown"
+
+    %{
+      path: path,
+      kind: kind
+    }
+    |> maybe_put(:source, map_value(doc, "source", :source))
+    |> maybe_put(:exists, map_value(doc, "exists", :exists))
+    |> maybe_put(:size, map_value(doc, "size", :size))
+    |> maybe_put(:mtime, map_value(doc, "mtime", :mtime))
+  end
+
+  defp normalize_doc(other), do: %{path: to_string(other), kind: "unknown"}
+
+  defp normalize_endpoint(endpoint) when is_map(endpoint) do
+    method = map_value(endpoint, "method", :method)
+    path = map_value(endpoint, "path", :path)
+
+    %{
+      method: method,
+      path: path
+    }
+    |> maybe_put(:description, map_value(endpoint, "description", :description))
+    |> maybe_put(:category, map_value(endpoint, "category", :category))
+    |> maybe_put(:risk, map_value(endpoint, "risk", :risk))
+    |> maybe_put(:body_hint, map_value(endpoint, "body_hint", :body_hint))
+    |> maybe_put(:params, map_value(endpoint, "params", :params))
+    |> maybe_put(:source, map_value(endpoint, "source", :source))
+  end
+
+  defp normalize_endpoint(other), do: %{method: "GET", path: to_string(other)}
+
+  defp endpoint_signature(endpoint) do
+    method = endpoint.method |> to_string() |> String.upcase() |> String.trim()
+    path = endpoint.path |> to_string() |> String.trim()
+    {method, path}
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp map_value(map, string_key, atom_key) do
+    case Map.fetch(map, string_key) do
+      {:ok, value} -> value
+      :error -> Map.get(map, atom_key)
+    end
   end
 end

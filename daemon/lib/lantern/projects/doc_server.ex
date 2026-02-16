@@ -10,7 +10,9 @@ defmodule Lantern.Projects.DocServer do
   Lists all configured docs for a project with metadata (size, mtime, exists).
   """
   def list(%Project{} = project) do
-    Enum.map(project.docs, fn doc ->
+    project
+    |> Project.merged_docs()
+    |> Enum.map(fn doc ->
       full_path = resolve_path(project.path, doc.path)
       stat = safe_stat(full_path)
 

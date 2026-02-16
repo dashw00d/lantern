@@ -7,7 +7,7 @@ defmodule Lantern.MCP.Tools.GetProject do
   alias Lantern.Projects.{Manager, Project}
 
   schema do
-    field :name, :string, required: true, description: "Project name or ID"
+    field(:name, :string, required: true, description: "Project name or ID")
   end
 
   def execute(%{name: name}, frame) do

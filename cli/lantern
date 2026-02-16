@@ -604,6 +604,93 @@ cmd_open() {
         echo -e "  ${ICON_ARROW} ${C_BOLD_CYAN}https://${domain}${C_RESET}"
 }
 
+cmd_mcp() {
+    local action="${1:-help}"
+
+    case "$action" in
+        install)
+            local client="${2:-}"
+            local mode="${3:-bridge}"
+            if [[ -z "$client" ]]; then
+                die "Usage: lantern mcp install <cursor|claude|opencode|json> [bridge|http]"
+            fi
+            cmd_mcp_install "$client" "$mode"
+            ;;
+        bridge)
+            need_cmd npx
+            local mcp_url="${LANTERN_HOST}/mcp"
+            info "Starting MCP stdio bridge to ${mcp_url}"
+            exec npx -y mcp-remote "$mcp_url"
+            ;;
+        url)
+            echo "${LANTERN_HOST}/mcp"
+            ;;
+        help|"")
+            echo ""
+            echo -e "  ${C_BOLD}MCP Commands${C_RESET}"
+            echo -e "  ${C_DIM}$(printf '%.0s─' {1..50})${C_RESET}"
+            echo ""
+            echo -e "  lantern mcp url"
+            echo -e "  lantern mcp bridge"
+            echo -e "  lantern mcp install <cursor|claude|opencode|json> [bridge|http]"
+            echo ""
+            echo -e "  ${C_DIM}bridge mode writes a stdio config using 'lantern mcp bridge'${C_RESET}"
+            echo -e "  ${C_DIM}http mode writes a streamable HTTP MCP endpoint config${C_RESET}"
+            echo ""
+            ;;
+        *)
+            die "Unknown mcp command: ${action}"
+            ;;
+    esac
+}
+
+cmd_mcp_install() {
+    local client="$1"
+    local mode="$2"
+
+    local config_path=""
+    case "$client" in
+        cursor) config_path="${HOME}/.cursor/mcp.json" ;;
+        claude) config_path="${HOME}/.config/claude/mcp.json" ;;
+        opencode) config_path="${HOME}/.config/opencode/mcp.json" ;;
+        json) config_path="${PWD}/lantern-mcp.json" ;;
+        *) die "Unknown client '${client}'. Use cursor, claude, opencode, or json" ;;
+    esac
+
+    mkdir -p "$(dirname "$config_path")"
+
+    local server_json
+    if [[ "$mode" == "http" ]]; then
+        server_json=$(jq -n --arg url "${LANTERN_HOST}/mcp" '{transport: "streamable_http", url: $url}')
+    else
+        server_json=$(jq -n '{command: "lantern", args: ["mcp", "bridge"]}')
+    fi
+
+    if [[ -f "$config_path" ]]; then
+        local existing
+        existing=$(cat "$config_path")
+        if echo "$existing" | jq empty >/dev/null 2>&1; then
+            if echo "$existing" | jq -e '.mcpServers' >/dev/null 2>&1; then
+                echo "$existing" | jq --argjson server "$server_json" '.mcpServers.lantern = $server' > "$config_path"
+            else
+                echo "$existing" | jq --argjson server "$server_json" '. + {mcpServers: {lantern: $server}}' > "$config_path"
+            fi
+        else
+            jq -n --argjson server "$server_json" '{mcpServers: {lantern: $server}}' > "$config_path"
+        fi
+    else
+        jq -n --argjson server "$server_json" '{mcpServers: {lantern: $server}}' > "$config_path"
+    fi
+
+    success "Installed Lantern MCP config for ${client}"
+    echo -e "  ${ICON_ARROW} ${config_path}"
+    if [[ "$mode" == "bridge" ]]; then
+        echo -e "  ${C_DIM}Uses stdio bridge via: lantern mcp bridge${C_RESET}"
+    else
+        echo -e "  ${C_DIM}Uses streamable HTTP endpoint: ${LANTERN_HOST}/mcp${C_RESET}"
+    fi
+}
+
 cmd_help() {
     echo ""
     echo -e "  ${C_BOLD}Lantern${C_RESET} v${LANTERN_VERSION}  ${C_DIM}— Valet for Linux${C_RESET}"
@@ -633,6 +720,7 @@ cmd_help() {
     echo -e "  ${C_BOLD}Config${C_RESET}"
     echo -e "    config              Show current settings"
     echo -e "    config set <k> <v>  Update a setting"
+    echo -e "    mcp                 MCP install/bootstrap commands"
     echo ""
     echo -e "  ${C_BOLD}Other${C_RESET}"
     echo -e "    help                Show this help message"
@@ -708,7 +796,7 @@ _lantern_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="init scan list on off restart status logs open mailpit services health config help version completions"
+    commands="init scan list on off restart status logs open mailpit services health config mcp help version completions"
     project_commands="on off restart status logs open"
     mailpit_actions="on off start stop status open"
 
@@ -739,6 +827,10 @@ _lantern_completions() {
             ;;
         config)
             COMPREPLY=( $(compgen -W "show set" -- "$cur") )
+            return 0
+            ;;
+        mcp)
+            COMPREPLY=( $(compgen -W "install bridge url help" -- "$cur") )
             return 0
             ;;
         completions)
@@ -780,6 +872,7 @@ _lantern() {
         'services:List all services'
         'health:Show system health'
         'config:Show or update settings'
+        'mcp:MCP install/bootstrap commands'
         'help:Show help'
         'version:Show version'
         'completions:Output shell completions'
@@ -807,6 +900,11 @@ _lantern() {
                     local -a config_cmds
                     config_cmds=('show:Show settings' 'set:Update a setting')
                     _describe 'config commands' config_cmds
+                    ;;
+                mcp)
+                    local -a mcp_cmds
+                    mcp_cmds=('install:Install client config' 'bridge:Run stdio bridge' 'url:Show MCP URL')
+                    _describe 'mcp commands' mcp_cmds
                     ;;
                 completions)
                     local -a shells
@@ -848,6 +946,7 @@ complete -c lantern -n "__fish_use_subcommand" -a mailpit -d "Manage Mailpit ser
 complete -c lantern -n "__fish_use_subcommand" -a services -d "List all services"
 complete -c lantern -n "__fish_use_subcommand" -a health -d "Show system health"
 complete -c lantern -n "__fish_use_subcommand" -a config -d "Show or update settings"
+complete -c lantern -n "__fish_use_subcommand" -a mcp -d "MCP install/bootstrap commands"
 complete -c lantern -n "__fish_use_subcommand" -a help -d "Show help"
 complete -c lantern -n "__fish_use_subcommand" -a version -d "Show version"
 complete -c lantern -n "__fish_use_subcommand" -a completions -d "Output shell completions"
@@ -860,6 +959,7 @@ complete -c lantern -n "__fish_seen_subcommand_from mailpit" -a "on off status o
 
 # Config subcommands
 complete -c lantern -n "__fish_seen_subcommand_from config" -a "show set"
+complete -c lantern -n "__fish_seen_subcommand_from mcp" -a "install bridge url help"
 
 # Completions subcommands
 complete -c lantern -n "__fish_seen_subcommand_from completions" -a "bash zsh fish"
@@ -893,6 +993,7 @@ main() {
         services|svc)   cmd_services "$@" ;;
         health)         cmd_health "$@" ;;
         config|cfg)     cmd_config "$@" ;;
+        mcp)            cmd_mcp "$@" ;;
         open)           cmd_open "$@" ;;
         help|-h|--help) cmd_help "$@" ;;
         version|-v|--version) cmd_version "$@" ;;

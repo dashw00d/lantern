@@ -4,6 +4,10 @@ defmodule LanternWeb.SystemController do
   alias Lantern.System.Health
   alias Lantern.System.{Caddy, DNS, TLS}
   alias Lantern.Config.Settings
+  alias Lantern.Projects.Manager
+  alias Lantern.System.Systemd
+
+  @managed_service_units ["mailpit.service", "redis-server.service", "postgresql.service"]
 
   def health(conn, _params) do
     json(conn, %{data: Health.status()})
@@ -46,6 +50,38 @@ defmodule LanternWeb.SystemController do
     json(conn, %{data: settings})
   end
 
+  def shutdown(conn, _params) do
+    projects_result =
+      case Manager.deactivate_all() do
+        {:ok, projects} -> %{status: :ok, stopped_projects: Enum.map(projects, & &1.name)}
+        {:error, reason} -> %{status: :error, error: inspect(reason)}
+      end
+
+    services_result =
+      if Application.get_env(:lantern, :shutdown_stop_services, true) do
+        @managed_service_units
+        |> Enum.map(fn unit -> {unit, stop_service_unit(unit)} end)
+        |> Map.new()
+      else
+        %{}
+      end
+
+    overall_status =
+      if projects_result.status == :ok and Enum.all?(services_result, fn {_k, v} -> v == :ok end) do
+        :ok
+      else
+        :partial
+      end
+
+    json(conn, %{
+      data: %{
+        status: overall_status,
+        projects: projects_result,
+        services: services_result
+      }
+    })
+  end
+
   defp run_init_step(_name, fun) do
     case fun.() do
       :ok -> :ok
@@ -54,5 +90,12 @@ defmodule LanternWeb.SystemController do
     end
   rescue
     e -> %{error: inspect(e)}
+  end
+
+  defp stop_service_unit(unit) do
+    case Systemd.stop(unit) do
+      :ok -> :ok
+      {:error, reason} -> %{error: reason}
+    end
   end
 end

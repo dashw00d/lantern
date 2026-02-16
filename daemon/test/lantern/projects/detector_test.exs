@@ -104,6 +104,7 @@ defmodule Lantern.Projects.DetectorTest do
     test "detects FastAPI project", %{tmp_dir: tmp_dir} do
       project_dir = Path.join(tmp_dir, "fastapi-app")
       File.mkdir_p!(project_dir)
+
       File.write!(Path.join(project_dir, "pyproject.toml"), """
       [project]
       dependencies = ["fastapi>=0.100.0", "uvicorn"]
@@ -118,7 +119,11 @@ defmodule Lantern.Projects.DetectorTest do
     test "detects Flask project", %{tmp_dir: tmp_dir} do
       project_dir = Path.join(tmp_dir, "flask-app")
       File.mkdir_p!(project_dir)
-      File.write!(Path.join(project_dir, "app.py"), "from flask import Flask\napp = Flask(__name__)")
+
+      File.write!(
+        Path.join(project_dir, "app.py"),
+        "from flask import Flask\napp = Flask(__name__)"
+      )
 
       project = Detector.detect(project_dir)
       assert project.type == :proxy

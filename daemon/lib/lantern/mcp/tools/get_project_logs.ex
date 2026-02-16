@@ -7,7 +7,7 @@ defmodule Lantern.MCP.Tools.GetProjectLogs do
   alias Lantern.Projects.{Manager, DeployRunner, ProcessRunner}
 
   schema do
-    field :name, :string, required: true, description: "Project name"
+    field(:name, :string, required: true, description: "Project name")
   end
 
   def execute(%{name: name}, frame) do

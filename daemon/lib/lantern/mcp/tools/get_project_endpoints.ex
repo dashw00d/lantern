@@ -4,10 +4,10 @@ defmodule Lantern.MCP.Tools.GetProjectEndpoints do
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
-  alias Lantern.Projects.Manager
+  alias Lantern.Projects.{Manager, Project}
 
   schema do
-    field :name, :string, required: true, description: "Project name"
+    field(:name, :string, required: true, description: "Project name")
   end
 
   def execute(%{name: name}, frame) do
@@ -16,7 +16,7 @@ defmodule Lantern.MCP.Tools.GetProjectEndpoints do
         {:error, Error.execution("Project '#{name}' not found"), frame}
 
       project ->
-        {:reply, Response.tool() |> Response.json(project.endpoints || []), frame}
+        {:reply, Response.tool() |> Response.json(Project.merged_endpoints(project)), frame}
     end
   end
 end

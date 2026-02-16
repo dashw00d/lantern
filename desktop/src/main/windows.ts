@@ -24,6 +24,9 @@ export function createMainWindow(): BrowserWindow {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      // Keep preload in a full context so the Lantern bridge is reliably
+      // exposed across Electron/runtime variations.
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });

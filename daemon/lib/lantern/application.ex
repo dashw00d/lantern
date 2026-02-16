@@ -5,27 +5,33 @@ defmodule Lantern.Application do
 
   use Application
 
+  alias Lantern.Projects.Manager
+  alias Lantern.System.Systemd
+
+  @shutdown_service_units ["mailpit.service", "redis-server.service", "postgresql.service"]
+
   @impl true
   def start(_type, _args) do
-    children = [
-      LanternWeb.Telemetry,
-      {DNSCluster, query: Application.get_env(:lantern, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Lantern.PubSub},
-      {Registry, keys: :unique, name: Lantern.ProcessRegistry},
-      Lantern.Config.Settings,
-      Lantern.Config.Store,
-      Lantern.Projects.PortAllocator,
-      Lantern.Projects.ProjectSupervisor,
-      Lantern.Projects.Manager,
-      Lantern.Templates.Registry,
-      Lantern.Profiles.Manager,
-      {Finch, name: Lantern.Finch},
-      Lantern.Health.Checker,
-      Hermes.Server.Registry,
-      {Lantern.MCP.Server, transport: :streamable_http},
-      # Start to serve requests, typically the last entry
-      LanternWeb.Endpoint
-    ] ++ self_registration_children()
+    children =
+      [
+        LanternWeb.Telemetry,
+        {DNSCluster, query: Application.get_env(:lantern, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: Lantern.PubSub},
+        {Registry, keys: :unique, name: Lantern.ProcessRegistry},
+        Lantern.Config.Settings,
+        Lantern.Config.Store,
+        Lantern.Projects.PortAllocator,
+        Lantern.Projects.ProjectSupervisor,
+        Lantern.Projects.Manager,
+        Lantern.Templates.Registry,
+        Lantern.Profiles.Manager,
+        {Finch, name: Lantern.Finch},
+        Lantern.Health.Checker,
+        Hermes.Server.Registry,
+        {Lantern.MCP.Server, transport: :streamable_http},
+        # Start to serve requests, typically the last entry
+        LanternWeb.Endpoint
+      ] ++ self_registration_children() ++ discovery_worker_children()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -41,11 +47,48 @@ defmodule Lantern.Application do
     end
   end
 
+  defp discovery_worker_children do
+    if Application.get_env(:lantern, :discovery_worker_enabled, true) do
+      [Lantern.Projects.DiscoveryWorker]
+    else
+      []
+    end
+  end
+
   # Tell Phoenix to update the endpoint configuration
   # whenever the application is updated.
   @impl true
   def config_change(changed, _new, removed) do
     LanternWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  @impl true
+  def prep_stop(state) do
+    _ = safe_deactivate_all_projects()
+    _ = safe_stop_managed_services()
+    state
+  end
+
+  defp safe_deactivate_all_projects do
+    Manager.deactivate_all()
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp safe_stop_managed_services do
+    if Application.get_env(:lantern, :shutdown_stop_services, true) do
+      Enum.each(@shutdown_service_units, fn unit ->
+        _ = Systemd.stop(unit)
+      end)
+    else
+      :ok
+    end
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
   end
 end

@@ -1,9 +1,37 @@
-import { Tray, Menu, shell } from 'electron';
+import { Tray, Menu, shell, app } from 'electron';
 import { showMainWindow, getMainWindow } from './windows.js';
 import { randomUUID } from 'node:crypto';
+import http from 'node:http';
 import { loadTrayIcon } from './icons.js';
 
 let tray: Tray | null = null;
+const DAEMON_BASE = 'http://127.0.0.1:4777';
+
+async function shutdownLanternRuntime(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const req = http.request(
+      `${DAEMON_BASE}/api/system/shutdown`,
+      {
+        method: 'POST',
+        timeout: 4000,
+        headers: {
+          Accept: 'application/json',
+        },
+      },
+      (res) => {
+        res.resume();
+        resolve();
+      }
+    );
+
+    req.on('error', () => resolve());
+    req.on('timeout', () => {
+      req.destroy();
+      resolve();
+    });
+    req.end();
+  });
+}
 
 export function createTray(): Tray {
   const icon = loadTrayIcon();
@@ -87,10 +115,10 @@ export function updateTrayMenu(
     { type: 'separator' },
     {
       label: 'Quit Lantern',
-      click: () => {
-        // Actually quit the app (not just hide)
+      click: async () => {
+        await shutdownLanternRuntime();
         tray?.destroy();
-        process.exit(0);
+        app.exit(0);
       },
     },
   ]);

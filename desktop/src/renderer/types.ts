@@ -31,6 +31,7 @@ export interface DeployConfig {
 export interface DocEntry {
   path: string;
   kind: string;
+  source?: 'manual' | 'discovered' | string;
   exists?: boolean;
   size?: number | null;
   mtime?: string | null;
@@ -43,6 +44,24 @@ export interface EndpointEntry {
   category?: string;
   risk?: string;
   body_hint?: string;
+  source?: 'manual' | 'discovered' | string;
+}
+
+export interface DiscoveryMetadata {
+  refreshed_at?: string;
+  docs?: {
+    enabled?: boolean;
+    count?: number;
+    source_count?: number;
+    sources?: string[];
+  };
+  api?: {
+    enabled?: boolean;
+    count?: number;
+    source_count?: number;
+    sources?: string[];
+    errors?: { source: string; error: string }[];
+  };
 }
 
 export interface RoutingConfig {
@@ -92,6 +111,13 @@ export interface Project {
   deploy: DeployConfig;
   docs: DocEntry[];
   endpoints: EndpointEntry[];
+  docs_auto?: Record<string, unknown>;
+  api_auto?: Record<string, unknown>;
+  discovered_docs?: DocEntry[];
+  discovered_endpoints?: EndpointEntry[];
+  docs_available?: DocEntry[];
+  endpoints_available?: EndpointEntry[];
+  discovery?: DiscoveryMetadata;
   routing: RoutingConfig | null;
   depends_on: string[];
 }
@@ -133,7 +159,14 @@ export interface ToolDetail extends ToolSummary {
   run_cmd: string | null;
   endpoints: EndpointEntry[];
   docs: DocEntry[];
+  discovered_docs?: DocEntry[];
+  docs_available?: DocEntry[];
   docs_paths: string[];
+  endpoints_available?: EndpointEntry[];
+  discovered_endpoints?: EndpointEntry[];
+  docs_auto?: Record<string, unknown>;
+  api_auto?: Record<string, unknown>;
+  discovery?: DiscoveryMetadata;
   routing: RoutingConfig | null;
   depends_on: string[];
   repo_url: string | null;

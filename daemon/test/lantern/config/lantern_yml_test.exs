@@ -227,6 +227,31 @@ defmodule Lantern.Config.LanternYmlTest do
       assert attrs.health_endpoint == "/health"
       assert attrs.repo_url == "https://github.com/user/ghost"
     end
+
+    test "parses docs_auto and api_auto config" do
+      yaml = """
+      type: proxy
+      docs_auto:
+        enabled: true
+        patterns:
+          - README.md
+          - docs/**/*.md
+        max_files: 25
+      api_auto:
+        enabled: true
+        candidates:
+          - /openapi.json
+        timeout_ms: 1500
+      """
+
+      assert {:ok, attrs} = LanternYml.parse_string(yaml)
+      assert attrs.docs_auto.enabled == true
+      assert attrs.docs_auto.patterns == ["README.md", "docs/**/*.md"]
+      assert attrs.docs_auto.max_files == 25
+      assert attrs.api_auto.enabled == true
+      assert attrs.api_auto.candidates == ["/openapi.json"]
+      assert attrs.api_auto.timeout_ms == 1500
+    end
   end
 
   describe "interpolate/2" do
@@ -268,7 +293,9 @@ defmodule Lantern.Config.LanternYmlTest do
         tags: ["blog"],
         deploy: %{start: "docker compose up -d"},
         docs: [%{path: "README.md", kind: "readme"}],
-        depends_on: ["mysql"]
+        depends_on: ["mysql"],
+        docs_auto: %{enabled: true, patterns: ["README.md"]},
+        api_auto: %{enabled: true, candidates: ["/openapi.json"]}
       }
 
       project = LanternYml.to_project(yml_attrs, "ghost", "/home/ryan/sites/ghost")
@@ -279,6 +306,8 @@ defmodule Lantern.Config.LanternYmlTest do
       assert project.deploy.start == "docker compose up -d"
       assert length(project.docs) == 1
       assert project.depends_on == ["mysql"]
+      assert project.docs_auto.enabled == true
+      assert project.api_auto.enabled == true
     end
   end
 end
