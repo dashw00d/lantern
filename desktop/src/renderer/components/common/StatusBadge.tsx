@@ -35,6 +35,7 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span
+      aria-label={`Status: ${statusLabels[status] || status}`}
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
         statusStyles[status] || statusStyles.unknown,

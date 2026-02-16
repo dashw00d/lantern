@@ -7,6 +7,9 @@ config :lantern, LanternWeb.Endpoint,
   secret_key_base: "k9VMKnvHF0ONWW3bSRQvCqK2u04CDOaiIbJ4OioAFAKBH/PB4pBPMZN3JFTvdz3u",
   server: false
 
+# Disable self-registration during tests (no Caddy available)
+config :lantern, self_register: false
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

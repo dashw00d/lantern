@@ -1,9 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, X, Save, RotateCw } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
+import { useAppStore } from '../stores/appStore';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { FormField } from '../components/ui/FormField';
+import { Card } from '../components/ui/Card';
 
 export function Settings() {
   const { settings, update } = useSettings();
+  const addToast = useAppStore((s) => s.addToast);
   const [saving, setSaving] = useState(false);
 
   // Local form state
@@ -19,13 +26,15 @@ export function Settings() {
   );
   const [newRoot, setNewRoot] = useState('');
 
-  // Sync from server when settings load
-  if (settings && tld === '.glow' && settings.tld !== '.glow') {
-    setTld(settings.tld);
-    setPhpSocket(settings.php_fpm_socket);
-    setCaddyMode(settings.caddy_mode);
-    setWorkspaceRoots(settings.workspace_roots);
-  }
+  // Sync local form state when server settings load
+  useEffect(() => {
+    if (settings) {
+      setTld(settings.tld);
+      setPhpSocket(settings.php_fpm_socket);
+      setCaddyMode(settings.caddy_mode);
+      setWorkspaceRoots(settings.workspace_roots);
+    }
+  }, [settings]);
 
   const addRoot = () => {
     if (newRoot && !workspaceRoots.includes(newRoot)) {
@@ -47,6 +56,9 @@ export function Settings() {
         caddy_mode: caddyMode as 'files' | 'admin_api',
         workspace_roots: workspaceRoots,
       });
+      addToast({ type: 'success', message: 'Settings saved' });
+    } catch {
+      addToast({ type: 'error', message: 'Failed to save settings' });
     } finally {
       setSaving(false);
     }
@@ -63,7 +75,7 @@ export function Settings() {
   return (
     <div className="max-w-2xl space-y-6">
       {/* Workspace Roots */}
-      <section className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold mb-3">Workspace Roots</h2>
         <p className="text-xs text-muted-foreground mb-3">
           Directories where Lantern scans for projects.
@@ -75,113 +87,107 @@ export function Settings() {
               className="flex items-center justify-between rounded-md bg-muted px-3 py-2"
             >
               <span className="text-sm font-mono">{root}</span>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => removeRoot(root)}
-                className="text-muted-foreground hover:text-destructive"
+                aria-label={`Remove ${root}`}
+                className="hover:text-destructive"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           ))}
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="text"
               value={newRoot}
               onChange={(e) => setNewRoot(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addRoot()}
               placeholder="/home/user/projects"
-              className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="flex-1 font-mono"
             />
-            <button
-              onClick={addRoot}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
-            >
+            <Button variant="secondary" onClick={addRoot}>
               <Plus className="h-4 w-4" />
               Add
-            </button>
+            </Button>
           </div>
         </div>
-      </section>
+      </Card>
 
       {/* TLD */}
-      <section className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold mb-3">Domain Settings</h2>
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground">TLD</label>
-            <input
+          <FormField label="TLD" htmlFor="settings-tld">
+            <Input
+              id="settings-tld"
               type="text"
               value={tld}
               onChange={(e) => setTld(e.target.value)}
-              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+              className="font-mono"
             />
-          </div>
+          </FormField>
         </div>
-      </section>
+      </Card>
 
       {/* PHP-FPM */}
-      <section className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold mb-3">PHP Configuration</h2>
-        <div>
-          <label className="text-xs text-muted-foreground">
-            PHP-FPM Socket Path
-          </label>
-          <input
+        <FormField label="PHP-FPM Socket Path" htmlFor="settings-php-socket">
+          <Input
+            id="settings-php-socket"
             type="text"
             value={phpSocket}
             onChange={(e) => setPhpSocket(e.target.value)}
-            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+            className="font-mono"
           />
-        </div>
-      </section>
+        </FormField>
+      </Card>
 
       {/* Caddy Mode */}
-      <section className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold mb-3">Caddy Integration</h2>
-        <div>
-          <label className="text-xs text-muted-foreground">Mode</label>
-          <select
+        <FormField label="Mode" htmlFor="settings-caddy-mode">
+          <Select
+            id="settings-caddy-mode"
             value={caddyMode}
             onChange={(e) => setCaddyMode(e.target.value as 'files' | 'admin_api')}
-            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full"
           >
             <option value="files">Config Files</option>
             <option value="admin_api">Admin API</option>
-          </select>
-        </div>
-      </section>
+          </Select>
+        </FormField>
+      </Card>
 
       {/* Active Profile */}
-      <section className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold mb-3">Profile</h2>
         <p className="text-xs text-muted-foreground">
           Active profile: {settings.active_profile || 'None'}
         </p>
-      </section>
+      </Card>
 
       {/* Save button */}
       <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
+        <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <RotateCw className="h-4 w-4 animate-spin" />
           ) : (
             <Save className="h-4 w-4" />
           )}
           Save Settings
-        </button>
+        </Button>
       </div>
 
       {/* About */}
-      <section className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold mb-2">About</h2>
         <p className="text-xs text-muted-foreground">
           Lantern v0.1.0 — Local development environment manager
         </p>
-      </section>
+      </Card>
     </div>
   );
 }

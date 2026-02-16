@@ -10,7 +10,8 @@ defmodule Lantern.Projects.Scanner do
   Scans all configured workspace roots and returns a list of project paths.
   """
   def scan do
-    workspace_roots = Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")])
+    workspace_roots = Lantern.Config.Settings.get(:workspace_roots)
+    workspace_roots = if workspace_roots == [] or workspace_roots == nil, do: [Path.expand("~/sites")], else: workspace_roots
 
     workspace_roots
     |> Enum.flat_map(&scan_root/1)

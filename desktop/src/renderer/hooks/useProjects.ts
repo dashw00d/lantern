@@ -3,18 +3,19 @@ import { useAppStore } from '../stores/appStore';
 import { api } from '../api/client';
 import { joinChannel } from '../api/socket';
 import { getLanternBridge } from '../lib/electron';
-import type { Project } from '../types';
+import type { Project, ProjectKind } from '../types';
 
 export function useProjects() {
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const updateProject = useAppStore((s) => s.updateProject);
+  const upsertProject = useAppStore((s) => s.upsertProject);
   const addToast = useAppStore((s) => s.addToast);
   const searchQuery = useAppStore((s) => s.searchQuery);
 
-  const fetchProjects = useCallback(async () => {
+  const fetchProjects = useCallback(async (includeHidden: boolean = false) => {
     try {
-      const res = await api.listProjects();
+      const res = await api.listProjects({ includeHidden });
       setProjects(res.data);
     } catch (err) {
       console.error('Failed to fetch projects:', err);
@@ -30,7 +31,7 @@ export function useProjects() {
       updateProject(name, { status: 'starting' });
       try {
         const res = await api.activateProject(name);
-        updateProject(name, res.data);
+        upsertProject(res.data);
         addToast({ type: 'success', message: `Project "${name}" activated` });
         getLanternBridge()?.requestTrayRefresh();
       } catch (err) {
@@ -39,7 +40,7 @@ export function useProjects() {
         throw err;
       }
     },
-    [updateProject, addToast]
+    [updateProject, upsertProject, addToast]
   );
 
   const deactivate = useCallback(
@@ -47,7 +48,7 @@ export function useProjects() {
       updateProject(name, { status: 'stopping' });
       try {
         const res = await api.deactivateProject(name);
-        updateProject(name, res.data);
+        upsertProject(res.data);
         addToast({ type: 'success', message: `Project "${name}" deactivated` });
         getLanternBridge()?.requestTrayRefresh();
       } catch (err) {
@@ -56,7 +57,7 @@ export function useProjects() {
         throw err;
       }
     },
-    [updateProject, addToast]
+    [updateProject, upsertProject, addToast]
   );
 
   const restart = useCallback(
@@ -64,7 +65,7 @@ export function useProjects() {
       updateProject(name, { status: 'starting' });
       try {
         const res = await api.restartProject(name);
-        updateProject(name, res.data);
+        upsertProject(res.data);
         addToast({ type: 'success', message: `Project "${name}" restarted` });
         getLanternBridge()?.requestTrayRefresh();
       } catch (err) {
@@ -73,12 +74,12 @@ export function useProjects() {
         throw err;
       }
     },
-    [updateProject, addToast]
+    [updateProject, upsertProject, addToast]
   );
 
-  const scan = useCallback(async () => {
+  const scan = useCallback(async (includeHidden: boolean = false) => {
     try {
-      const res = await api.scanProjects();
+      const res = await api.scanProjects({ includeHidden });
       setProjects(res.data);
       addToast({ type: 'success', message: 'Project scan complete' });
       getLanternBridge()?.requestTrayRefresh();
@@ -86,6 +87,86 @@ export function useProjects() {
       addToast({ type: 'error', message: `Failed to scan projects: ${err instanceof Error ? err.message : 'Unknown error'}` });
     }
   }, [setProjects, addToast]);
+
+  const create = useCallback(
+    async (
+      project: Partial<Project> & { name: string; path: string },
+      includeHidden: boolean = false
+    ) => {
+      try {
+        const res = await api.createProject(project);
+        upsertProject(res.data);
+        addToast({ type: 'success', message: `Project "${res.data.name}" added` });
+        await fetchProjects(includeHidden);
+        return res.data;
+      } catch (err) {
+        addToast({
+          type: 'error',
+          message: `Failed to add project: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        });
+        throw err;
+      }
+    },
+    [addToast, fetchProjects, upsertProject]
+  );
+
+  const setHidden = useCallback(
+    async (name: string, hidden: boolean, includeHidden: boolean = false) => {
+      try {
+        const res = await api.patchProject(name, { enabled: !hidden });
+        upsertProject(res.data);
+        addToast({
+          type: 'success',
+          message: hidden ? `Project "${name}" hidden` : `Project "${name}" unhidden`,
+        });
+        await fetchProjects(includeHidden);
+        return res.data;
+      } catch (err) {
+        addToast({
+          type: 'error',
+          message: `Failed to update visibility for "${name}": ${err instanceof Error ? err.message : 'Unknown error'}`,
+        });
+        throw err;
+      }
+    },
+    [addToast, fetchProjects, upsertProject]
+  );
+
+  const setKind = useCallback(
+    async (name: string, kind: ProjectKind) => {
+      try {
+        const res = await api.patchProject(name, { kind });
+        upsertProject(res.data);
+        addToast({ type: 'success', message: `Project "${name}" updated` });
+        return res.data;
+      } catch (err) {
+        addToast({
+          type: 'error',
+          message: `Failed to update "${name}": ${err instanceof Error ? err.message : 'Unknown error'}`,
+        });
+        throw err;
+      }
+    },
+    [addToast, upsertProject]
+  );
+
+  const remove = useCallback(
+    async (name: string, includeHidden: boolean = false) => {
+      try {
+        await api.deleteProject(name);
+        setProjects(useAppStore.getState().projects.filter((p) => p.name !== name));
+        addToast({ type: 'success', message: `Project "${name}" removed` });
+        await fetchProjects(includeHidden);
+      } catch (err) {
+        addToast({
+          type: 'error',
+          message: `Failed to remove "${name}": ${err instanceof Error ? err.message : 'Unknown error'}`,
+        });
+        throw err;
+      }
+    },
+    [addToast, fetchProjects, setProjects]
+  );
 
   const filtered = searchQuery
     ? projects.filter(
@@ -103,6 +184,10 @@ export function useProjects() {
     deactivate,
     restart,
     scan,
+    create,
+    setHidden,
+    setKind,
+    remove,
   };
 }
 
@@ -110,6 +195,7 @@ export function useProjects() {
 export function useProjectChannel() {
   const updateProject = useAppStore((s) => s.updateProject);
   const setProjects = useAppStore((s) => s.setProjects);
+  const upsertProject = useAppStore((s) => s.upsertProject);
 
   useEffect(() => {
     const channel = joinChannel('project:lobby');
@@ -122,7 +208,7 @@ export function useProjectChannel() {
     );
 
     channel.on('project_updated', (payload: { project: Project }) => {
-      updateProject(payload.project.name, payload.project);
+      upsertProject(payload.project);
     });
 
     channel.on('projects_changed', (payload: { projects: Project[] }) => {
@@ -132,5 +218,5 @@ export function useProjectChannel() {
     return () => {
       // Channel cleanup handled by socket manager
     };
-  }, [updateProject, setProjects]);
+  }, [updateProject, setProjects, upsertProject]);
 }

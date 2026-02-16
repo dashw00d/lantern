@@ -50,6 +50,25 @@ defmodule LanternWeb.ProjectChannel do
   end
 
   @impl true
+  def handle_info({:project_updated, %Project{} = project}, socket) do
+    push(socket, "project_updated", %{project: Project.to_map(project)})
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:projects_changed, projects}, socket) when is_list(projects) do
+    payload =
+      Enum.map(projects, fn
+        %Project{} = project -> Project.to_map(project)
+        project when is_map(project) -> project
+        _ -> %{}
+      end)
+
+    push(socket, "projects_changed", %{projects: payload})
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_info({:log_line, _project_name, line}, socket) do
     push(socket, "log_line", %{line: line})
     {:noreply, socket}

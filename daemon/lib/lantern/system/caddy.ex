@@ -13,6 +13,7 @@ defmodule Lantern.System.Caddy do
 
   @sites_dir "/etc/caddy/sites.d"
   @caddyfile_path "/etc/caddy/Caddyfile"
+  @lighthouse_config_file "__lantern_lighthouse.caddy"
 
   @doc """
   Returns the base Caddyfile content that imports site configs.
@@ -29,6 +30,21 @@ defmodule Lantern.System.Caddy do
   @doc """
   Generates the Caddy config content for a project.
   """
+  def generate_config(%Project{upstream_url: upstream_url} = project)
+      when is_binary(upstream_url) do
+    upstream = String.trim(upstream_url)
+
+    if upstream == "" do
+      generate_config(%{project | upstream_url: nil})
+    else
+      """
+      #{project.domain} {
+        reverse_proxy #{upstream}
+      }
+      """
+    end
+  end
+
   def generate_config(%Project{type: :php} = project) do
     socket = Application.get_env(:lantern, :php_fpm_socket, "/run/php/php8.3-fpm.sock")
     root = project.root || "public"
@@ -92,6 +108,10 @@ defmodule Lantern.System.Caddy do
     Path.join(@sites_dir, "#{project_name}.caddy")
   end
 
+  defp lighthouse_config_path do
+    Path.join(@sites_dir, @lighthouse_config_file)
+  end
+
   @doc """
   Writes a project's Caddy config file.
   sites.d is owned by the daemon user, so no privilege escalation needed.
@@ -104,22 +124,24 @@ defmodule Lantern.System.Caddy do
         {:error, reason}
 
       content ->
-        path = config_path(project.name)
+        with :ok <- ensure_lighthouse_config() do
+          path = config_path(project.name)
 
-        case File.write(path, content) do
-          :ok ->
-            :ok
+          case File.write(path, content) do
+            :ok ->
+              :ok
 
-          {:error, :enoent} ->
-            {:error,
-             "#{@sites_dir} does not exist. Run 'lantern init' or reinstall the package."}
+            {:error, :enoent} ->
+              {:error,
+               "#{@sites_dir} does not exist. Run 'lantern init' or reinstall the package."}
 
-          {:error, :eacces} ->
-            {:error,
-             "Permission denied writing to #{@sites_dir}. Run 'lantern init' to fix ownership."}
+            {:error, :eacces} ->
+              {:error,
+               "Permission denied writing to #{@sites_dir}. Run 'lantern init' to fix ownership."}
 
-          {:error, reason} ->
-            {:error, "Failed to write config: #{inspect(reason)}"}
+            {:error, reason} ->
+              {:error, "Failed to write config: #{inspect(reason)}"}
+          end
         end
     end
   end
@@ -167,7 +189,40 @@ defmodule Lantern.System.Caddy do
       else
         :ok
       end
+      |> case do
+        :ok -> ensure_lighthouse_config()
+        other -> other
+      end
     end
+  end
+
+  @doc """
+  Ensures the lighthouse docs host is configured.
+  """
+  def ensure_lighthouse_config do
+    case File.write(lighthouse_config_path(), lighthouse_config()) do
+      :ok -> :ok
+      {:error, reason} -> {:error, "Failed to write lighthouse config: #{inspect(reason)}"}
+    end
+  rescue
+    e -> {:error, "Failed to write lighthouse config: #{Exception.message(e)}"}
+  end
+
+  defp lighthouse_config do
+    port =
+      Application.get_env(:lantern, LanternWeb.Endpoint, [])
+      |> Keyword.get(:http, [])
+      |> Keyword.get(:port, 4777)
+
+    """
+    #{lighthouse_domain()} {
+      reverse_proxy 127.0.0.1:#{port}
+    }
+    """
+  end
+
+  defp lighthouse_domain do
+    "lighthouse" <> Application.get_env(:lantern, :tld, ".glow")
   end
 
   @doc """

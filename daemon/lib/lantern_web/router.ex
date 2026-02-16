@@ -10,13 +10,44 @@ defmodule LanternWeb.Router do
 
     # Projects
     get "/projects", ProjectController, :index
+    post "/projects", ProjectController, :create
     post "/projects/scan", ProjectController, :scan
     get "/projects/:name", ProjectController, :show
     get "/projects/:name/logs", ProjectController, :logs
+    get "/projects/:name/endpoints", ProjectController, :endpoints
+    get "/projects/:name/dependencies", ProjectController, :dependencies
+    get "/projects/:name/dependents", ProjectController, :dependents
     post "/projects/:name/activate", ProjectController, :activate
     post "/projects/:name/deactivate", ProjectController, :deactivate
     post "/projects/:name/restart", ProjectController, :restart
     put "/projects/:name", ProjectController, :update
+    patch "/projects/:name", ProjectController, :patch
+    delete "/projects/:name", ProjectController, :delete
+
+    # Tools
+    get "/tools", ToolController, :index
+    get "/tools/:id", ToolController, :show
+    get "/tools/:id/docs", ToolController, :docs
+
+    # Deploy (production service commands, separate from activate/deactivate for local dev)
+    post "/projects/:name/deploy/start", DeployController, :start
+    post "/projects/:name/deploy/stop", DeployController, :stop
+    post "/projects/:name/deploy/restart", DeployController, :restart
+    get "/projects/:name/deploy/logs", DeployController, :logs
+    get "/projects/:name/deploy/status", DeployController, :status
+
+    # Docs
+    get "/projects/:name/docs", DocController, :index
+    get "/projects/:name/docs/*filename", DocController, :show
+
+    # Health
+    get "/health", HealthController, :index
+    get "/projects/:name/health", HealthController, :show
+    post "/projects/:name/health/check", HealthController, :check
+
+    # Infrastructure
+    get "/ports", InfrastructureController, :ports
+    get "/dependencies", InfrastructureController, :dependencies
 
     # Services
     get "/services", ServiceController, :index
@@ -40,6 +71,21 @@ defmodule LanternWeb.Router do
     get "/profiles", ProfileController, :index
     post "/profiles/:name/activate", ProfileController, :activate
   end
+
+  # Root API discovery
+  scope "/", LanternWeb do
+    pipe_through :api
+    get "/", RootController, :index
+  end
+
+  scope "/", LanternWeb do
+    get "/:project/docs", LighthouseController, :index
+    get "/:project/docs/*filename", LighthouseController, :show
+  end
+
+  # MCP endpoint
+  forward "/mcp", Hermes.Server.Transport.StreamableHTTP.Plug,
+    init_opts: [server: Lantern.MCP.Server]
 
   # Enable LiveDashboard in development
   if Application.compile_env(:lantern, :dev_routes) do

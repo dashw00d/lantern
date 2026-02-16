@@ -83,10 +83,10 @@ defmodule Lantern.Projects.Detector do
   # Private helpers
 
   defp detect_from_config(path) do
-    yml_path = Path.join(path, "lantern.yml")
+    config_path = find_config_file(path)
 
-    if File.exists?(yml_path) do
-      case LanternYml.parse(yml_path) do
+    if config_path do
+      case LanternYml.parse(config_path) do
         {:ok, attrs} ->
           name = Path.basename(path)
           {:ok, LanternYml.to_project(attrs, name, path)}
@@ -96,6 +96,17 @@ defmodule Lantern.Projects.Detector do
       end
     else
       :none
+    end
+  end
+
+  defp find_config_file(path) do
+    yaml_path = Path.join(path, "lantern.yaml")
+    yml_path = Path.join(path, "lantern.yml")
+
+    cond do
+      File.exists?(yaml_path) -> yaml_path
+      File.exists?(yml_path) -> yml_path
+      true -> nil
     end
   end
 

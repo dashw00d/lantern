@@ -1,12 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Play,
   Square,
   RotateCw,
   ExternalLink,
-  Copy,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api } from '../api/client';
@@ -15,11 +14,35 @@ import { useLogs } from '../hooks/useLogs';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { TypeBadge } from '../components/common/TypeBadge';
 import { LogViewer } from '../components/common/LogViewer';
+import { Button } from '../components/ui/Button';
+import { Skeleton } from '../components/ui/Skeleton';
+import { OverviewTab } from '../components/project-detail/OverviewTab';
+import { EntryTab } from '../components/project-detail/EntryTab';
+import { RunTab } from '../components/project-detail/RunTab';
+import { RoutingTab } from '../components/project-detail/RoutingTab';
+import { DocsTab } from '../components/project-detail/DocsTab';
+import { EndpointsTab } from '../components/project-detail/EndpointsTab';
+import { HealthTab } from '../components/project-detail/HealthTab';
+import { DependenciesTab } from '../components/project-detail/DependenciesTab';
+import { DeployTab } from '../components/project-detail/DeployTab';
+import { MailTab } from '../components/project-detail/MailTab';
 import type { Project } from '../types';
 
-type Tab = 'overview' | 'run' | 'routing' | 'mail' | 'logs';
+type Tab =
+  | 'overview'
+  | 'entry'
+  | 'run'
+  | 'routing'
+  | 'mail'
+  | 'logs'
+  | 'docs'
+  | 'endpoints'
+  | 'health'
+  | 'dependencies'
+  | 'deploy';
 
 export function ProjectDetail() {
+  const navigate = useNavigate();
   const { name: routeName } = useParams<{ name: string }>();
   const projectName = routeName
     ? (() => {
@@ -31,53 +54,95 @@ export function ProjectDetail() {
       })()
     : null;
   const [activeTab, setActiveTab] = useState<Tab>('overview');
-  const [fetchedProject, setFetchedProject] = useState<Project | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const updateProject = useAppStore((s) => s.updateProject);
-  const projectFromStore = useAppStore((s) =>
+  const addToast = useAppStore((s) => s.addToast);
+  const setProjects = useAppStore((s) => s.setProjects);
+  const upsertProject = useAppStore((s) => s.upsertProject);
+  const project = useAppStore((s) =>
     s.projects.find((p) => p.name === projectName)
   );
-  const project = projectFromStore || fetchedProject;
-  const { logs, clear: clearLogs } = useLogs(projectName || '');
+  const logsTabActive = activeTab === 'logs';
+  const { logs, clear: clearLogs } = useLogs(projectName || '', logsTabActive);
 
-  const fetchProject = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+
     if (!projectName) {
       setLoadError('Invalid project URL');
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     setLoadError(null);
 
-    try {
-      const res = await api.getProject(projectName);
-      setFetchedProject(res.data);
-      updateProject(projectName, res.data);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to load project';
-      setLoadError(message);
-      console.error('Failed to fetch project:', err);
-    }
-  }, [projectName, updateProject]);
+    api
+      .getProject(projectName)
+      .then((res) => {
+        if (cancelled) return;
+        upsertProject(res.data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const message =
+          err instanceof Error ? err.message : 'Failed to load project';
+        setLoadError(message);
+        console.error('Failed to fetch project:', err);
+      });
 
-  useEffect(() => {
-    fetchProject();
-  }, [fetchProject]);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectName, upsertProject]);
 
   if (!project) {
+    if (loadError) {
+      return (
+        <div className="space-y-3">
+          <Link
+            to="/projects"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Projects
+          </Link>
+          <div className="flex items-center justify-center h-64 rounded-lg border border-border bg-card">
+            <p className="text-muted-foreground">
+              Project could not be loaded: {loadError}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="space-y-3">
-        <Link
-          to="/projects"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Projects
-        </Link>
-        <div className="flex items-center justify-center h-64 rounded-lg border border-border bg-card">
-          <p className="text-muted-foreground">
-            {loadError ? `Project could not be loaded: ${loadError}` : 'Loading project...'}
-          </p>
+      <div className="space-y-6">
+        {/* Skeleton header */}
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-8 w-8 rounded-md" />
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-5 w-14 rounded-full" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-9 w-20 rounded-md" />
+        </div>
+
+        {/* Skeleton tab bar */}
+        <div className="flex gap-4 border-b border-border pb-px">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-4 w-16 mb-2" />
+          ))}
+        </div>
+
+        {/* Skeleton content */}
+        <div className="space-y-4">
+          <Skeleton className="h-32 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
         </div>
       </div>
     );
@@ -89,6 +154,14 @@ export function ProjectDetail() {
   const url = project.domain ? `https://${project.domain}` : '';
 
   const handleActivate = async () => {
+    if (project.enabled === false) {
+      addToast({
+        type: 'warning',
+        message: 'This project is hidden. Unhide it before starting.',
+      });
+      return;
+    }
+
     updateProject(project.name, { status: 'starting' });
     try {
       const res = await api.activateProject(project.name);
@@ -118,10 +191,32 @@ export function ProjectDetail() {
     }
   };
 
+  const handleProjectUpdated = (updated: Project) => {
+    if (projectName && updated.name !== projectName) {
+      const current = useAppStore.getState().projects;
+      const next = current.filter(
+        (p) => p.name !== projectName && p.name !== updated.name
+      );
+      setProjects([...next, updated]);
+      navigate(`/projects/${encodeURIComponent(updated.name)}`, {
+        replace: true,
+      });
+      return;
+    }
+
+    upsertProject(updated);
+  };
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'entry', label: 'Entry' },
     { id: 'run', label: 'Run' },
     { id: 'routing', label: 'Routing' },
+    ...(project.docs?.length ? [{ id: 'docs' as Tab, label: 'Docs' }] : []),
+    ...(project.endpoints?.length ? [{ id: 'endpoints' as Tab, label: 'Endpoints' }] : []),
+    ...(project.health_endpoint ? [{ id: 'health' as Tab, label: 'Health' }] : []),
+    ...(project.depends_on?.length || project.kind === 'service' ? [{ id: 'dependencies' as Tab, label: 'Dependencies' }] : []),
+    ...(project.deploy && Object.keys(project.deploy).length ? [{ id: 'deploy' as Tab, label: 'Deploy' }] : []),
     { id: 'mail', label: 'Mail' },
     { id: 'logs', label: 'Logs' },
   ];
@@ -132,6 +227,7 @@ export function ProjectDetail() {
       <div className="flex items-center gap-4">
         <Link
           to="/projects"
+          aria-label="Back to projects"
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -141,38 +237,53 @@ export function ProjectDetail() {
             <h1 className="text-xl font-bold">{project.name}</h1>
             <TypeBadge type={project.type} />
             <StatusBadge status={project.status} />
+            {project.kind !== 'project' && (
+              <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-400">
+                {project.kind}
+              </span>
+            )}
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">{project.path}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {project.description || project.path}
+          </p>
+          {project.tags?.length > 0 && (
+            <div className="mt-1 flex gap-1">
+              {project.tags.map((tag) => (
+                <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {isRunning ? (
             <>
-              <button
+              <Button
+                variant="destructive"
                 onClick={handleDeactivate}
                 disabled={isBusy}
-                className="inline-flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/20 disabled:opacity-50"
               >
                 <Square className="h-4 w-4" />
                 Stop
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={handleRestart}
                 disabled={isBusy}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium hover:bg-accent/80 disabled:opacity-50"
               >
                 <RotateCw className="h-4 w-4" />
                 Restart
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
               onClick={handleActivate}
-              disabled={isBusy}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              disabled={isBusy || project.enabled === false}
             >
               <Play className="h-4 w-4" />
               Start
-            </button>
+            </Button>
           )}
           {isRunning && project.domain && (
             <a
@@ -189,13 +300,35 @@ export function ProjectDetail() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-border">
+      <div
+        role="tablist"
+        aria-label="Project sections"
+        className="flex border-b border-border overflow-x-auto"
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const currentIndex = tabs.findIndex((t) => t.id === activeTab);
+            const nextIndex =
+              e.key === 'ArrowRight'
+                ? (currentIndex + 1) % tabs.length
+                : (currentIndex - 1 + tabs.length) % tabs.length;
+            setActiveTab(tabs[nextIndex].id);
+            const nextButton = document.getElementById(`tab-${tabs[nextIndex].id}`);
+            nextButton?.focus();
+          }
+        }}
+      >
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            id={`tab-${tab.id}`}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`tabpanel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+              'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap',
               activeTab === tab.id
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -207,212 +340,23 @@ export function ProjectDetail() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'overview' && (
-        <OverviewTab project={project} />
-      )}
-      {activeTab === 'run' && <RunTab project={project} />}
-      {activeTab === 'routing' && <RoutingTab project={project} />}
-      {activeTab === 'mail' && <MailTab project={project} />}
-      {activeTab === 'logs' && (
-        <LogViewer logs={logs} onClear={clearLogs} className="h-[500px]" />
-      )}
-    </div>
-  );
-}
-
-function OverviewTab({ project }: { project: Project }) {
-  const hasDomain = Boolean(project.domain);
-  const url = hasDomain ? `https://${project.domain}` : '';
-  const detection = project.detection || { confidence: 'low', source: 'auto' };
-  const features = project.features || {};
-
-  return (
-    <div className="grid grid-cols-2 gap-6">
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="text-sm font-semibold mb-3">Details</h3>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Domain</dt>
-              <dd className="flex items-center gap-1">
-                {project.domain || 'N/A'}
-                <button
-                  onClick={() => hasDomain && navigator.clipboard.writeText(url)}
-                  disabled={!hasDomain}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <Copy className="h-3 w-3" />
-                </button>
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Port</dt>
-              <dd>{project.port || 'N/A'}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Type</dt>
-              <dd><TypeBadge type={project.type || 'unknown'} /></dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Detection</dt>
-              <dd className="capitalize">
-                {detection.confidence} ({detection.source})
-              </dd>
-            </div>
-            {project.template && (
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">Template</dt>
-                <dd>{project.template}</dd>
-              </div>
-            )}
-            {project.pid && (
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">PID</dt>
-                <dd className="font-mono">{project.pid}</dd>
-              </div>
-            )}
-          </dl>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="text-sm font-semibold mb-3">Features</h3>
-          <div className="space-y-2">
-            {Object.entries(features).map(([key, value]) => (
-              <div key={key} className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground capitalize">
-                  {key.replace(/_/g, ' ')}
-                </span>
-                <span
-                  className={cn(
-                    'text-xs font-medium',
-                    value ? 'text-green-500' : 'text-muted-foreground'
-                  )}
-                >
-                  {value ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RunTab({ project }: { project: Project }) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold mb-3">Run Configuration</h3>
-        <dl className="space-y-3 text-sm">
-          <div>
-            <dt className="text-muted-foreground mb-1">Command</dt>
-            <dd className="rounded-md bg-muted px-3 py-2 font-mono text-xs">
-              {project.run_cmd || 'Not configured'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground mb-1">Working Directory</dt>
-            <dd className="rounded-md bg-muted px-3 py-2 font-mono text-xs">
-              {project.run_cwd || '.'}
-            </dd>
-          </div>
-          {project.run_env && Object.keys(project.run_env).length > 0 && (
-            <div>
-              <dt className="text-muted-foreground mb-1">
-                Environment Variables
-              </dt>
-              <dd className="space-y-1">
-                {Object.entries(project.run_env).map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="rounded-md bg-muted px-3 py-1.5 font-mono text-xs"
-                  >
-                    <span className="text-primary">{key}</span>=
-                    <span>{value}</span>
-                  </div>
-                ))}
-              </dd>
-            </div>
-          )}
-        </dl>
-      </div>
-    </div>
-  );
-}
-
-function RoutingTab({ project }: { project: Project }) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold mb-3">Routing</h3>
-        <dl className="space-y-3 text-sm">
-          <div className="flex justify-between">
-            <dt className="text-muted-foreground">Primary Domain</dt>
-            <dd>{project.domain || 'N/A'}</dd>
-          </div>
-          {project.root && (
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Document Root</dt>
-              <dd className="font-mono text-xs">{project.root}</dd>
-            </div>
-          )}
-          {project.port && (
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Upstream Port</dt>
-              <dd className="font-mono text-xs">{project.port}</dd>
-            </div>
-          )}
-        </dl>
-      </div>
-    </div>
-  );
-}
-
-function MailTab({ project }: { project: Project }) {
-  const mailEnabled = Boolean(project.features?.mailpit);
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold mb-3">Mail Configuration</h3>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm">Mailpit Integration</p>
-            <p className="text-xs text-muted-foreground">
-              Capture outgoing mail via SMTP on localhost:1025
-            </p>
-          </div>
-          <span
-            className={cn(
-              'text-sm font-medium',
-              mailEnabled ? 'text-green-500' : 'text-muted-foreground'
-            )}
-          >
-            {mailEnabled ? 'Enabled' : 'Disabled'}
-          </span>
-        </div>
-        {mailEnabled && (
-          <div className="mt-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">SMTP</span>
-              <span className="font-mono text-xs">127.0.0.1:1025</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Inbox</span>
-              <a
-                href="http://127.0.0.1:8025"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-primary hover:underline"
-              >
-                Open Mailpit
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-          </div>
+      <div
+        role="tabpanel"
+        id={`tabpanel-${activeTab}`}
+        aria-labelledby={`tab-${activeTab}`}
+      >
+        {activeTab === 'overview' && <OverviewTab project={project} />}
+        {activeTab === 'entry' && <EntryTab project={project} onProjectUpdated={handleProjectUpdated} />}
+        {activeTab === 'run' && <RunTab project={project} onProjectUpdated={handleProjectUpdated} />}
+        {activeTab === 'routing' && <RoutingTab project={project} onProjectUpdated={handleProjectUpdated} />}
+        {activeTab === 'docs' && <DocsTab project={project} onProjectUpdated={handleProjectUpdated} />}
+        {activeTab === 'endpoints' && <EndpointsTab project={project} />}
+        {activeTab === 'health' && <HealthTab project={project} />}
+        {activeTab === 'dependencies' && <DependenciesTab project={project} />}
+        {activeTab === 'deploy' && <DeployTab project={project} />}
+        {activeTab === 'mail' && <MailTab project={project} />}
+        {activeTab === 'logs' && (
+          <LogViewer logs={logs} onClear={clearLogs} className="h-[500px]" />
         )}
       </div>
     </div>

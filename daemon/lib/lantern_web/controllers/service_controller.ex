@@ -4,9 +4,24 @@ defmodule LanternWeb.ServiceController do
   alias Lantern.System.Systemd
 
   @known_services %{
-    "mailpit" => %{name: "mailpit", unit: "mailpit.service", ports: %{smtp: 1025, ui: 8025}, health_check_url: "http://127.0.0.1:8025"},
-    "redis" => %{name: "redis", unit: "redis-server.service", ports: %{default: 6379}, health_check_url: nil},
-    "postgres" => %{name: "postgres", unit: "postgresql.service", ports: %{default: 5432}, health_check_url: nil}
+    "mailpit" => %{
+      name: "mailpit",
+      unit: "mailpit.service",
+      ports: %{smtp: 1025, ui: 8025},
+      ui_url: "http://127.0.0.1:8025"
+    },
+    "redis" => %{
+      name: "redis",
+      unit: "redis-server.service",
+      ports: %{default: 6379},
+      ui_url: nil
+    },
+    "postgres" => %{
+      name: "postgres",
+      unit: "postgresql.service",
+      ports: %{default: 5432},
+      ui_url: nil
+    }
   }
 
   def index(conn, _params) do
@@ -18,7 +33,8 @@ defmodule LanternWeb.ServiceController do
           name: name,
           status: status,
           ports: info.ports,
-          health_check_url: info.health_check_url
+          ui_url: info.ui_url,
+          health_check_url: info.ui_url
         }
       end)
 
@@ -34,7 +50,7 @@ defmodule LanternWeb.ServiceController do
 
       info ->
         status = get_service_status(info.unit)
-        json(conn, %{data: %{name: name, status: status, ports: info.ports}})
+        json(conn, %{data: %{name: name, status: status, ports: info.ports, ui_url: info.ui_url}})
     end
   end
 
@@ -48,7 +64,11 @@ defmodule LanternWeb.ServiceController do
       info ->
         case Systemd.start(info.unit) do
           :ok ->
-            json(conn, %{data: %{name: name, status: :running}})
+            broadcast_service_change(name, :running)
+
+            json(conn, %{
+              data: %{name: name, status: :running, ports: info.ports, ui_url: info.ui_url}
+            })
 
           {:error, reason} ->
             conn
@@ -68,7 +88,11 @@ defmodule LanternWeb.ServiceController do
       info ->
         case Systemd.stop(info.unit) do
           :ok ->
-            json(conn, %{data: %{name: name, status: :stopped}})
+            broadcast_service_change(name, :stopped)
+
+            json(conn, %{
+              data: %{name: name, status: :stopped, ports: info.ports, ui_url: info.ui_url}
+            })
 
           {:error, reason} ->
             conn
@@ -83,5 +107,15 @@ defmodule LanternWeb.ServiceController do
       {:ok, status} -> status
       _ -> :unknown
     end
+  end
+
+  defp broadcast_service_change(name, status) do
+    Phoenix.PubSub.broadcast(
+      Lantern.PubSub,
+      "services:lobby",
+      {:service_change, name, status}
+    )
+  rescue
+    _ -> :ok
   end
 end

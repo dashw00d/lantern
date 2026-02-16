@@ -23,6 +23,7 @@ interface TypeBadgeProps {
 export function TypeBadge({ type, className }: TypeBadgeProps) {
   return (
     <span
+      aria-label={`Type: ${typeLabels[type] || type}`}
       className={cn(
         'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
         typeStyles[type] || typeStyles.unknown,

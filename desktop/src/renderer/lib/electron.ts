@@ -9,6 +9,7 @@ export interface LanternBridge {
   onTrayAction(cb: (action: TrayAction) => void): () => void;
   sendTrayActionResult(actionId: string, success: boolean, error?: string): void;
   requestTrayRefresh(): void;
+  pickFolder(): Promise<string | null>;
 }
 
 declare global {

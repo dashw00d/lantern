@@ -5,6 +5,8 @@ import type {
   HealthStatus,
   Settings,
   LogEntry,
+  ProjectHealthStatus,
+  DependencyGraph,
 } from '../types';
 
 export interface Toast {
@@ -16,17 +18,28 @@ export interface Toast {
 interface AppState {
   // Projects
   projects: Project[];
+  projectsLoaded: boolean;
   setProjects: (projects: Project[]) => void;
   updateProject: (name: string, updates: Partial<Project>) => void;
+  upsertProject: (project: Project) => void;
 
   // Services
   services: Service[];
   setServices: (services: Service[]) => void;
   updateService: (name: string, updates: Partial<Service>) => void;
 
-  // Health
+  // Health (system-level)
   health: HealthStatus | null;
   setHealth: (health: HealthStatus) => void;
+
+  // Project Health (per-project health checks)
+  projectHealth: Record<string, ProjectHealthStatus>;
+  setProjectHealth: (health: Record<string, ProjectHealthStatus>) => void;
+  updateProjectHealth: (name: string, status: ProjectHealthStatus) => void;
+
+  // Dependency Graph
+  dependencyGraph: DependencyGraph;
+  setDependencyGraph: (graph: DependencyGraph) => void;
 
   // Settings
   settings: Settings | null;
@@ -49,18 +62,35 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   projectViewMode: 'grid' | 'list';
   setProjectViewMode: (mode: 'grid' | 'list') => void;
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   // Projects
   projects: [],
-  setProjects: (projects) => set({ projects }),
+  projectsLoaded: false,
+  setProjects: (projects) => set({ projects, projectsLoaded: true }),
   updateProject: (name, updates) =>
     set((state) => ({
       projects: state.projects.map((p) =>
         p.name === name ? { ...p, ...updates } : p
       ),
     })),
+  upsertProject: (project) =>
+    set((state) => {
+      const exists = state.projects.some((p) => p.name === project.name);
+
+      if (exists) {
+        return {
+          projects: state.projects.map((p) =>
+            p.name === project.name ? project : p
+          ),
+        };
+      }
+
+      return { projects: [...state.projects, project] };
+    }),
 
   // Services
   services: [],
@@ -72,9 +102,21 @@ export const useAppStore = create<AppState>((set) => ({
       ),
     })),
 
-  // Health
+  // Health (system-level)
   health: null,
   setHealth: (health) => set({ health }),
+
+  // Project Health
+  projectHealth: {},
+  setProjectHealth: (projectHealth) => set({ projectHealth }),
+  updateProjectHealth: (name, status) =>
+    set((state) => ({
+      projectHealth: { ...state.projectHealth, [name]: status },
+    })),
+
+  // Dependency Graph
+  dependencyGraph: {},
+  setDependencyGraph: (dependencyGraph) => set({ dependencyGraph }),
 
   // Settings
   settings: null,
@@ -116,4 +158,6 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   projectViewMode: 'grid',
   setProjectViewMode: (mode) => set({ projectViewMode: mode }),
+  sidebarCollapsed: false,
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 }));

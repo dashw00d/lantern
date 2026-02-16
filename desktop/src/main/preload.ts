@@ -32,4 +32,8 @@ contextBridge.exposeInMainWorld('lantern', {
   requestTrayRefresh() {
     ipcRenderer.send('tray:refresh');
   },
+
+  pickFolder() {
+    return ipcRenderer.invoke('dialog:pick-folder') as Promise<string | null>;
+  },
 });

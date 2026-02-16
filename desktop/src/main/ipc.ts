@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron';
+import { dialog, ipcMain } from 'electron';
+import type { OpenDialogOptions } from 'electron';
 import http from 'node:http';
 import { updateTrayMenu } from './tray.js';
 import { getMainWindow } from './windows.js';
@@ -68,6 +69,23 @@ export function startTrayRefresh(): void {
   // Renderer explicitly requests a refresh (after UI-initiated actions)
   ipcMain.on('tray:refresh', () => {
     refreshTray();
+  });
+
+  ipcMain.handle('dialog:pick-folder', async () => {
+    const win = getMainWindow();
+    const options: OpenDialogOptions = {
+      properties: ['openDirectory', 'createDirectory'],
+    };
+
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0] ?? null;
   });
 }
 

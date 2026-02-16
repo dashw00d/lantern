@@ -1,12 +1,47 @@
 defmodule Lantern.Config.LanternYml do
   @moduledoc """
-  Parser for lantern.yml files found in project roots.
+  Parser for lantern.yml/lantern.yaml files found in project roots.
   Supports variable interpolation and returns a map of project overrides.
   """
 
   alias Lantern.Projects.Project
 
-  @supported_keys ~w(type domain root run routing features template)
+  @supported_keys ~w(
+    type domain root run routing features template
+    id name description kind base_url upstream_url health_endpoint repo_url
+    tags enabled deploy docs endpoints depends_on
+  )
+
+  @supported_key_map Map.new(@supported_keys, fn key -> {key, String.to_atom(key)} end)
+
+  @valid_types ~w(php proxy static unknown)
+  @valid_kinds ~w(service project capability website tool)
+
+  @feature_key_map %{
+    "mailpit" => :mailpit,
+    "auto_start" => :auto_start,
+    "auto_open_browser" => :auto_open_browser
+  }
+
+  @deploy_key_map %{
+    "install" => :install,
+    "start" => :start,
+    "stop" => :stop,
+    "restart" => :restart,
+    "logs" => :logs,
+    "status" => :status,
+    "env_file" => :env_file
+  }
+
+  @endpoint_key_map %{
+    "method" => :method,
+    "path" => :path,
+    "description" => :description,
+    "category" => :category,
+    "risk" => :risk,
+    "body_hint" => :body_hint,
+    "params" => :params
+  }
 
   @doc """
   Parses a lantern.yml file at the given path and returns project attributes.
@@ -68,6 +103,7 @@ defmodule Lantern.Config.LanternYml do
 
     attrs =
       base
+      |> maybe_put(:id, yml_attrs[:id])
       |> maybe_put(:type, yml_attrs[:type])
       |> maybe_put(:root, yml_attrs[:root])
       |> maybe_put(:template, yml_attrs[:template])
@@ -75,6 +111,19 @@ defmodule Lantern.Config.LanternYml do
       |> maybe_put(:run_cmd, get_in(yml_attrs, [:run, :cmd]))
       |> maybe_put(:run_cwd, get_in(yml_attrs, [:run, :cwd]))
       |> maybe_put(:run_env, get_in(yml_attrs, [:run, :env]))
+      |> maybe_put(:description, yml_attrs[:description])
+      |> maybe_put(:kind, yml_attrs[:kind])
+      |> maybe_put(:base_url, yml_attrs[:base_url])
+      |> maybe_put(:upstream_url, yml_attrs[:upstream_url])
+      |> maybe_put(:health_endpoint, yml_attrs[:health_endpoint])
+      |> maybe_put(:repo_url, yml_attrs[:repo_url])
+      |> maybe_put(:tags, yml_attrs[:tags])
+      |> maybe_put(:enabled, yml_attrs[:enabled])
+      |> maybe_put(:deploy, yml_attrs[:deploy])
+      |> maybe_put(:docs, yml_attrs[:docs])
+      |> maybe_put(:endpoints, yml_attrs[:endpoints])
+      |> maybe_put(:depends_on, yml_attrs[:depends_on])
+      |> maybe_put(:routing, yml_attrs[:routing])
 
     Project.new(attrs)
   end
@@ -85,13 +134,19 @@ defmodule Lantern.Config.LanternYml do
     yaml
     |> Map.take(@supported_keys)
     |> Enum.reduce(%{}, fn {key, value}, acc ->
-      atom_key = String.to_atom(key)
+      atom_key = Map.fetch!(@supported_key_map, key)
       Map.put(acc, atom_key, normalize_value(atom_key, value))
     end)
   end
 
   defp normalize_value(:type, value) when is_binary(value) do
-    String.to_atom(value)
+    normalized = String.trim(value)
+    if normalized in @valid_types, do: String.to_existing_atom(normalized), else: :unknown
+  end
+
+  defp normalize_value(:kind, value) when is_binary(value) do
+    normalized = String.trim(value)
+    if normalized in @valid_kinds, do: String.to_existing_atom(normalized), else: :project
   end
 
   defp normalize_value(:run, value) when is_map(value) do
@@ -108,15 +163,91 @@ defmodule Lantern.Config.LanternYml do
     %{
       aliases: value["aliases"] || [],
       paths: value["paths"] || %{},
-      websocket: value["websocket"] || false
+      websocket: value["websocket"] || false,
+      triggers: value["triggers"],
+      risk: value["risk"],
+      requires_confirmation: value["requires_confirmation"],
+      max_concurrent: value["max_concurrent"],
+      agents: value["agents"]
     }
   end
 
   defp normalize_value(:features, value) when is_map(value) do
-    Map.new(value, fn {k, v} -> {String.to_atom(k), v} end)
+    Map.new(value, fn {key, entry_value} ->
+      case lookup_whitelist_key(@feature_key_map, key) do
+        nil -> {to_string(key), entry_value}
+        mapped_key -> {mapped_key, entry_value}
+      end
+    end)
   end
 
+  defp normalize_value(:deploy, value) when is_map(value) do
+    Map.new(value, fn {key, entry_value} ->
+      case lookup_whitelist_key(@deploy_key_map, key) do
+        nil -> {to_string(key), entry_value}
+        mapped_key -> {mapped_key, entry_value}
+      end
+    end)
+  end
+
+  defp normalize_value(:upstream_url, value) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed == "", do: nil, else: trimmed
+  end
+
+  defp normalize_value(:docs, value) when is_list(value) do
+    Enum.map(value, &normalize_doc_entry/1)
+  end
+
+  defp normalize_value(:endpoints, value) when is_list(value) do
+    Enum.map(value, &normalize_endpoint_entry/1)
+  end
+
+  defp normalize_value(:tags, value) when is_list(value), do: value
+  defp normalize_value(:depends_on, value) when is_list(value), do: value
+
   defp normalize_value(_key, value), do: value
+
+  defp normalize_doc_entry(entry) when is_binary(entry) do
+    %{path: entry, kind: infer_doc_kind(entry)}
+  end
+
+  defp normalize_doc_entry(entry) when is_map(entry) do
+    path = entry["path"] || entry[:path]
+
+    %{
+      path: path,
+      kind: entry["kind"] || entry[:kind] || infer_doc_kind(path)
+    }
+  end
+
+  defp normalize_doc_entry(entry), do: entry
+
+  defp infer_doc_kind(nil), do: "unknown"
+
+  defp infer_doc_kind(path) when is_binary(path) do
+    downcased = String.downcase(path)
+
+    cond do
+      String.contains?(downcased, "readme") -> "readme"
+      String.contains?(downcased, "changelog") -> "changelog"
+      String.contains?(downcased, "contributing") -> "contributing"
+      String.ends_with?(downcased, ".md") -> "markdown"
+      String.ends_with?(downcased, ".txt") -> "text"
+      true -> "unknown"
+    end
+  end
+
+  defp normalize_endpoint_entry(entry) when is_map(entry) do
+    Map.new(entry, fn {key, value} ->
+      case lookup_whitelist_key(@endpoint_key_map, key) do
+        nil -> {to_string(key), value}
+        mapped_key -> {mapped_key, value}
+      end
+    end)
+  end
+
+  defp normalize_endpoint_entry(entry), do: entry
 
   defp normalize_env(nil), do: %{}
   defp normalize_env(env) when is_map(env), do: env
@@ -124,4 +255,11 @@ defmodule Lantern.Config.LanternYml do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp lookup_whitelist_key(mapping, key) when is_binary(key), do: Map.get(mapping, key)
+
+  defp lookup_whitelist_key(mapping, key) when is_atom(key),
+    do: Map.get(mapping, Atom.to_string(key))
+
+  defp lookup_whitelist_key(_mapping, _key), do: nil
 end

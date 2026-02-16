@@ -40,7 +40,7 @@ export function HealthStrip({ health, daemonConnected }: HealthStripProps) {
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
       {components.map((comp) => (
-        <div key={comp.label} className="flex items-center gap-2">
+        <div key={comp.label} className="flex items-center gap-2" aria-label={`${comp.label}: ${comp.status}`}>
           <span className="text-xs text-muted-foreground">{comp.label}</span>
           <StatusBadge status={comp.status} />
         </div>

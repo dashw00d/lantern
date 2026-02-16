@@ -1,20 +1,25 @@
 import { useEffect, useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { joinChannel, leaveChannel } from '../api/socket';
+import type { LogEntry } from '../types';
 
-export function useLogs(projectName: string) {
-  const logs = useAppStore((s) => s.logs[projectName] || []);
-  const appendLog = useAppStore((s) => s.appendLog);
-  const clearLogs = useAppStore((s) => s.clearLogs);
+const EMPTY_LOGS: LogEntry[] = [];
+
+export function useLogs(projectName: string, enabled: boolean = true) {
+  const logs = useAppStore((s) => s.logs[projectName] ?? EMPTY_LOGS);
   const channelTopic = `project:${projectName}`;
 
   useEffect(() => {
+    if (!enabled || !projectName) {
+      return;
+    }
+
     const channel = joinChannel(channelTopic);
 
     channel.on('log_line', (payload: { line?: string }) => {
       if (!payload.line) return;
 
-      appendLog(projectName, {
+      useAppStore.getState().appendLog(projectName, {
         timestamp: new Date().toISOString(),
         stream: 'stdout',
         line: payload.line,
@@ -24,11 +29,11 @@ export function useLogs(projectName: string) {
     return () => {
       leaveChannel(channelTopic);
     };
-  }, [projectName, channelTopic, appendLog]);
+  }, [enabled, projectName, channelTopic]);
 
   const clear = useCallback(() => {
-    clearLogs(projectName);
-  }, [projectName, clearLogs]);
+    useAppStore.getState().clearLogs(projectName);
+  }, [projectName]);
 
   return { logs, clear };
 }

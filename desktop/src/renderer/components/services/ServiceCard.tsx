@@ -1,6 +1,7 @@
 import { Power, ExternalLink } from 'lucide-react';
-import { cn } from '../../lib/utils';
 import { StatusBadge } from '../common/StatusBadge';
+import { Button } from '../ui/Button';
+import { Card, CardContent } from '../ui/Card';
 import type { Service } from '../../types';
 
 interface ServiceCardProps {
@@ -13,7 +14,7 @@ export function ServiceCard({ service, onStart, onStop }: ServiceCardProps) {
   const isRunning = service.status === 'running';
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <Card className="p-4">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="font-semibold capitalize text-card-foreground">
@@ -44,18 +45,13 @@ export function ServiceCard({ service, onStart, onStop }: ServiceCardProps) {
       )}
 
       <div className="mt-4 flex items-center justify-between">
-        <button
+        <Button
+          variant={isRunning ? 'destructive' : 'primary'}
           onClick={() => (isRunning ? onStop(service.name) : onStart(service.name))}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-            isRunning
-              ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'
-              : 'bg-primary/10 text-primary hover:bg-primary/20'
-          )}
         >
           <Power className="h-3.5 w-3.5" />
           {isRunning ? 'Stop' : 'Start'}
-        </button>
+        </Button>
 
         {isRunning && service.ui_url && (
           <a
@@ -69,6 +65,6 @@ export function ServiceCard({ service, onStart, onStop }: ServiceCardProps) {
           </a>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

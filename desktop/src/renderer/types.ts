@@ -12,6 +12,50 @@ export type ProjectStatus =
 
 export type DetectionConfidence = 'high' | 'medium' | 'low';
 
+export type ProjectKind =
+  | 'service'
+  | 'project'
+  | 'capability'
+  | 'website'
+  | 'tool';
+
+export interface DeployConfig {
+  start?: string;
+  stop?: string;
+  restart?: string;
+  logs?: string;
+  status?: string;
+  env_file?: string;
+}
+
+export interface DocEntry {
+  path: string;
+  kind: string;
+  exists?: boolean;
+  size?: number | null;
+  mtime?: string | null;
+}
+
+export interface EndpointEntry {
+  method: string;
+  path: string;
+  description?: string;
+  category?: string;
+  risk?: string;
+  body_hint?: string;
+}
+
+export interface RoutingConfig {
+  aliases?: string[];
+  paths?: Record<string, string>;
+  websocket?: boolean;
+  triggers?: string[];
+  risk?: string;
+  requires_confirmation?: boolean;
+  max_concurrent?: number;
+  agents?: string[];
+}
+
 export interface Project {
   name: string;
   path: string;
@@ -34,6 +78,22 @@ export interface Project {
   };
   pid: number | null;
   template: string | null;
+  // New registry fields
+  id: string;
+  description: string | null;
+  kind: ProjectKind;
+  base_url: string | null;
+  upstream_url: string | null;
+  health_endpoint: string | null;
+  repo_url: string | null;
+  tags: string[];
+  enabled: boolean;
+  registered_at: string | null;
+  deploy: DeployConfig;
+  docs: DocEntry[];
+  endpoints: EndpointEntry[];
+  routing: RoutingConfig | null;
+  depends_on: string[];
 }
 
 export type ServiceStatus = 'running' | 'stopped' | 'error' | 'unknown';
@@ -43,7 +103,45 @@ export interface Service {
   status: ServiceStatus;
   ports: Record<string, number>;
   ui_url: string | null;
+  health_check_url?: string | null;
   credentials: Record<string, string> | null;
+}
+
+export interface ToolSummary {
+  id: string;
+  name: string;
+  kind: ProjectKind;
+  description: string | null;
+  tags: string[];
+  enabled: boolean;
+  status: ProjectStatus;
+  domain: string | null;
+  base_url: string | null;
+  upstream_url: string | null;
+  health_endpoint: string | null;
+  health_status: string;
+  requires_confirmation: boolean;
+  max_concurrent: number;
+  triggers: string[];
+  risk: string | null;
+  agents: string[];
+}
+
+export interface ToolDetail extends ToolSummary {
+  path: string;
+  repo_path: string;
+  run_cmd: string | null;
+  endpoints: EndpointEntry[];
+  docs: DocEntry[];
+  docs_paths: string[];
+  routing: RoutingConfig | null;
+  depends_on: string[];
+  repo_url: string | null;
+}
+
+export interface ToolDoc extends DocEntry {
+  content?: string | null;
+  error?: string | null;
 }
 
 export interface HealthStatus {
@@ -56,6 +154,33 @@ export interface HealthStatus {
 export interface ComponentHealth {
   status: 'ok' | 'warning' | 'error' | 'unknown';
   message: string;
+}
+
+export interface ProjectHealthStatus {
+  status: 'healthy' | 'unhealthy' | 'unreachable' | 'error' | 'unknown';
+  latency_ms: number | null;
+  checked_at: string | null;
+  error: string | null;
+  history: ProjectHealthEntry[];
+}
+
+export interface ProjectHealthEntry {
+  status: string;
+  latency_ms: number;
+  checked_at: string;
+  error: string | null;
+}
+
+export interface DependencyGraph {
+  [projectName: string]: {
+    depends_on: string[];
+    depended_by: string[];
+  };
+}
+
+export interface PortAssignment {
+  port: number;
+  health_status: string;
 }
 
 export interface Settings {

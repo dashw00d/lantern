@@ -6,6 +6,7 @@ defmodule Lantern.Projects.Project do
   @type project_type :: :php | :proxy | :static | :unknown
   @type project_status :: :stopped | :starting | :running | :stopping | :error | :needs_config
   @type confidence :: :high | :medium | :low
+  @type project_kind :: :service | :project | :capability | :website | :tool
 
   @enforce_keys [:name, :path]
   defstruct [
@@ -19,10 +20,26 @@ defmodule Lantern.Projects.Project do
     :root,
     :pid,
     :template,
+    # New registry fields
+    :id,
+    :description,
+    :base_url,
+    :upstream_url,
+    :health_endpoint,
+    :repo_url,
+    :registered_at,
+    kind: :project,
     status: :stopped,
     run_env: %{},
     features: %{},
-    detection: %{confidence: :low, source: :auto}
+    detection: %{confidence: :low, source: :auto},
+    tags: [],
+    enabled: true,
+    deploy: %{},
+    docs: [],
+    endpoints: [],
+    routing: nil,
+    depends_on: []
   ]
 
   @type t :: %__MODULE__{
@@ -39,11 +56,38 @@ defmodule Lantern.Projects.Project do
           features: map(),
           detection: map(),
           pid: non_neg_integer() | nil,
-          template: String.t() | nil
+          template: String.t() | nil,
+          id: String.t() | nil,
+          description: String.t() | nil,
+          kind: project_kind(),
+          base_url: String.t() | nil,
+          upstream_url: String.t() | nil,
+          health_endpoint: String.t() | nil,
+          repo_url: String.t() | nil,
+          tags: [String.t()],
+          enabled: boolean(),
+          registered_at: String.t() | nil,
+          deploy: map(),
+          docs: [map()],
+          endpoints: [map()],
+          routing: map() | nil,
+          depends_on: [String.t()]
         }
 
   @valid_types [:php, :proxy, :static, :unknown]
   @valid_statuses [:stopped, :starting, :running, :stopping, :error, :needs_config]
+  @valid_kinds [:service, :project, :capability, :website, :tool]
+
+  @known_keys ~w(
+    name path domain type status port run_cmd run_cwd run_env root features
+    detection pid template id description kind base_url upstream_url health_endpoint
+    repo_url tags enabled registered_at deploy docs endpoints routing depends_on
+  )a
+
+  @known_key_map Map.new(@known_keys, fn key -> {Atom.to_string(key), key} end)
+  @valid_type_map Map.new(@valid_types, fn type -> {Atom.to_string(type), type} end)
+  @valid_status_map Map.new(@valid_statuses, fn status -> {Atom.to_string(status), status} end)
+  @valid_kind_map Map.new(@valid_kinds, fn kind -> {Atom.to_string(kind), kind} end)
 
   @doc """
   Creates a new project struct with sensible defaults.
@@ -55,12 +99,14 @@ defmodule Lantern.Projects.Project do
     name = attrs.name
 
     defaults = %{
+      id: Map.get(attrs, :id) || name,
       domain: name <> tld,
       type: :unknown,
       status: :stopped,
       run_env: %{},
       features: %{},
-      detection: %{confidence: :low, source: :auto}
+      detection: %{confidence: :low, source: :auto},
+      registered_at: Map.get(attrs, :registered_at) || DateTime.utc_now() |> DateTime.to_iso8601()
     }
 
     struct!(__MODULE__, Map.merge(defaults, attrs))
@@ -79,6 +125,8 @@ defmodule Lantern.Projects.Project do
       |> validate_type(project)
       |> validate_status(project)
       |> validate_port(project)
+      |> validate_upstream_url(project)
+      |> validate_kind(project)
 
     case errors do
       [] -> {:ok, project}
@@ -118,7 +166,22 @@ defmodule Lantern.Projects.Project do
       features: project.features,
       detection: project.detection,
       pid: project.pid,
-      template: project.template
+      template: project.template,
+      id: project.id,
+      description: project.description,
+      kind: project.kind,
+      base_url: project.base_url,
+      upstream_url: project.upstream_url,
+      health_endpoint: project.health_endpoint,
+      repo_url: project.repo_url,
+      tags: project.tags,
+      enabled: project.enabled,
+      registered_at: project.registered_at,
+      deploy: project.deploy,
+      docs: project.docs,
+      endpoints: project.endpoints,
+      routing: project.routing,
+      depends_on: project.depends_on
     }
   end
 
@@ -132,51 +195,122 @@ defmodule Lantern.Projects.Project do
       |> normalize_keys()
       |> normalize_type()
       |> normalize_status()
+      |> normalize_kind()
 
     new(attrs)
   end
 
   # Private validation helpers
 
-  defp validate_name(errors, %{name: name}) when is_binary(name) and byte_size(name) > 0, do: errors
+  defp validate_name(errors, %{name: name}) when is_binary(name) and byte_size(name) > 0,
+    do: errors
+
   defp validate_name(errors, _), do: [{:name, "must be a non-empty string"} | errors]
 
-  defp validate_path(errors, %{path: path}) when is_binary(path) and byte_size(path) > 0, do: errors
+  defp validate_path(errors, %{path: path}) when is_binary(path) and byte_size(path) > 0,
+    do: errors
+
   defp validate_path(errors, _), do: [{:path, "must be a non-empty string"} | errors]
 
   defp validate_type(errors, %{type: type}) when type in @valid_types, do: errors
   defp validate_type(errors, %{type: nil}), do: errors
-  defp validate_type(errors, _), do: [{:type, "must be one of: #{inspect(@valid_types)}"} | errors]
+
+  defp validate_type(errors, _),
+    do: [{:type, "must be one of: #{inspect(@valid_types)}"} | errors]
 
   defp validate_status(errors, %{status: status}) when status in @valid_statuses, do: errors
-  defp validate_status(errors, _), do: [{:status, "must be one of: #{inspect(@valid_statuses)}"} | errors]
+
+  defp validate_status(errors, _),
+    do: [{:status, "must be one of: #{inspect(@valid_statuses)}"} | errors]
 
   defp validate_port(errors, %{port: nil}), do: errors
-  defp validate_port(errors, %{port: port}) when is_integer(port) and port > 0 and port < 65536, do: errors
+
+  defp validate_port(errors, %{port: port}) when is_integer(port) and port > 0 and port < 65536,
+    do: errors
+
   defp validate_port(errors, _), do: [{:port, "must be a valid port number (1-65535)"} | errors]
 
+  defp validate_upstream_url(errors, %{upstream_url: nil}), do: errors
+
+  defp validate_upstream_url(errors, %{upstream_url: upstream_url}) when is_binary(upstream_url) do
+    normalized = String.trim(upstream_url)
+
+    case URI.parse(normalized) do
+      %URI{scheme: scheme, host: host}
+      when scheme in ["http", "https"] and is_binary(host) and byte_size(host) > 0 ->
+        errors
+
+      _ ->
+        [{:upstream_url, "must be a valid http(s) URL"} | errors]
+    end
+  end
+
+  defp validate_upstream_url(errors, _),
+    do: [{:upstream_url, "must be a valid http(s) URL"} | errors]
+
+  defp validate_kind(errors, %{kind: kind}) when kind in @valid_kinds, do: errors
+  defp validate_kind(errors, %{kind: nil}), do: errors
+
+  defp validate_kind(errors, _),
+    do: [{:kind, "must be one of: #{inspect(@valid_kinds)}"} | errors]
+
   defp normalize_keys(map) do
-    Map.new(map, fn
-      {key, value} when is_binary(key) -> {String.to_existing_atom(key), value}
-      {key, value} when is_atom(key) -> {key, value}
+    map
+    |> Enum.reduce(%{}, fn
+      {key, value}, acc when is_binary(key) ->
+        case safe_to_atom(key) do
+          nil -> acc
+          atom_key -> Map.put(acc, atom_key, value)
+        end
+
+      {key, value}, acc when is_atom(key) ->
+        Map.put(acc, key, value)
+
+      _, acc ->
+        acc
     end)
-  rescue
-    ArgumentError -> map
+  end
+
+  defp safe_to_atom(key) when is_binary(key) do
+    Map.get(@known_key_map, key)
   end
 
   defp normalize_type(%{type: type} = attrs) when is_binary(type) do
-    Map.put(attrs, :type, String.to_existing_atom(type))
-  rescue
-    ArgumentError -> attrs
+    case safe_to_type_atom(type) do
+      nil -> Map.delete(attrs, :type)
+      atom -> Map.put(attrs, :type, atom)
+    end
   end
 
   defp normalize_type(attrs), do: attrs
 
   defp normalize_status(%{status: status} = attrs) when is_binary(status) do
-    Map.put(attrs, :status, String.to_existing_atom(status))
-  rescue
-    ArgumentError -> attrs
+    case safe_to_status_atom(status) do
+      nil -> Map.delete(attrs, :status)
+      atom -> Map.put(attrs, :status, atom)
+    end
   end
 
   defp normalize_status(attrs), do: attrs
+
+  defp normalize_kind(%{kind: kind} = attrs) when is_binary(kind) do
+    case safe_to_kind_atom(kind) do
+      nil -> Map.delete(attrs, :kind)
+      atom -> Map.put(attrs, :kind, atom)
+    end
+  end
+
+  defp normalize_kind(attrs), do: attrs
+
+  defp safe_to_type_atom(str) do
+    Map.get(@valid_type_map, str)
+  end
+
+  defp safe_to_status_atom(str) do
+    Map.get(@valid_status_map, str)
+  end
+
+  defp safe_to_kind_atom(str) do
+    Map.get(@valid_kind_map, str)
+  end
 end

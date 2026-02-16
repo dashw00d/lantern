@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
 import { Play, Square, RotateCw, ExternalLink, Copy } from 'lucide-react';
-import { cn } from '../../lib/utils';
 import { StatusBadge } from '../common/StatusBadge';
 import { TypeBadge } from '../common/TypeBadge';
+import { Button } from '../ui/Button';
 import type { Project } from '../../types';
 
 interface ProjectCardProps {
@@ -19,6 +19,7 @@ export function ProjectCard({
   onRestart,
 }: ProjectCardProps) {
   const isRunning = project.status === 'running';
+  const isHidden = project.enabled === false;
   const isBusy =
     project.status === 'starting' || project.status === 'stopping';
   const url = `https://${project.domain}`;
@@ -46,6 +47,11 @@ export function ProjectCard({
 
       <div className="mt-3 flex items-center gap-2">
         <TypeBadge type={project.type} />
+        {isHidden && (
+          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            hidden
+          </span>
+        )}
         {project.domain && (
           <span className="text-xs text-muted-foreground truncate">
             {project.domain}
@@ -57,50 +63,59 @@ export function ProjectCard({
         <div className="flex items-center gap-1">
           {isRunning ? (
             <>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => onDeactivate(project.name)}
                 disabled={isBusy}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                 title="Stop"
+                aria-label="Stop"
               >
                 <Square className="h-4 w-4" />
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => onRestart(project.name)}
                 disabled={isBusy}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                 title="Restart"
+                aria-label="Restart"
               >
                 <RotateCw className="h-4 w-4" />
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => onActivate(project.name)}
-              disabled={isBusy}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              disabled={isBusy || isHidden}
               title="Start"
+              aria-label="Start"
             >
               <Play className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
 
         {isRunning && (
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={copyUrl}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               title="Copy URL"
+              aria-label="Copy URL"
             >
               <Copy className="h-3.5 w-3.5" />
-            </button>
+            </Button>
             <a
               href={url}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               title="Open in browser"
+              aria-label="Open in browser"
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </a>

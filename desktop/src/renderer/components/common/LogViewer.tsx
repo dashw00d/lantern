@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Button } from '../ui/Button';
 import type { LogEntry } from '../../types';
 
 interface LogViewerProps {
@@ -31,13 +32,10 @@ export function LogViewer({ logs, onClear, className }: LogViewerProps) {
         <span className="text-xs text-muted-foreground">
           {logs.length} lines
         </span>
-        <button
-          onClick={onClear}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
+        <Button variant="ghost" size="sm" onClick={onClear}>
           <Trash2 className="h-3 w-3" />
           Clear
-        </button>
+        </Button>
       </div>
       <div
         ref={containerRef}

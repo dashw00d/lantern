@@ -53,7 +53,9 @@ defmodule Lantern.MixProject do
       {:jason, "~> 1.2"},
       {:yaml_elixir, "~> 2.9"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      {:finch, "~> 0.19"},
+      {:hermes_mcp, "~> 0.14"}
     ]
   end
 
