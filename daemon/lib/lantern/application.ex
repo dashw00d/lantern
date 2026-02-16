@@ -6,9 +6,6 @@ defmodule Lantern.Application do
   use Application
 
   alias Lantern.Projects.Manager
-  alias Lantern.System.Systemd
-
-  @shutdown_service_units ["mailpit.service", "redis-server.service", "postgresql.service"]
 
   @impl true
   def start(_type, _args) do
@@ -66,7 +63,6 @@ defmodule Lantern.Application do
   @impl true
   def prep_stop(state) do
     _ = safe_deactivate_all_projects()
-    _ = safe_stop_managed_services()
     state
   end
 
@@ -78,17 +74,4 @@ defmodule Lantern.Application do
     :exit, _ -> :ok
   end
 
-  defp safe_stop_managed_services do
-    if Application.get_env(:lantern, :shutdown_stop_services, true) do
-      Enum.each(@shutdown_service_units, fn unit ->
-        _ = Systemd.stop(unit)
-      end)
-    else
-      :ok
-    end
-  rescue
-    _ -> :ok
-  catch
-    :exit, _ -> :ok
-  end
 end

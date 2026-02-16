@@ -985,7 +985,19 @@ defmodule Lantern.Projects.Manager do
         :ok
 
       runtime_command_configured?(project, :start) ->
-        :ok
+        deploy_start = get_in(project.deploy || %{}, [:start]) |> to_string()
+
+        cond do
+          is_binary(project.upstream_url) and String.trim(project.upstream_url) != "" ->
+            :ok
+
+          String.contains?(deploy_start, "${PORT}") or String.contains?(deploy_start, "$PORT") ->
+            :ok
+
+          true ->
+            {:error,
+             "deploy.start must use ${PORT} or upstream_url must be set so Caddy can route traffic"}
+        end
 
       String.contains?(run_cmd, "${PORT}") or String.contains?(run_cmd, "$PORT") ->
         :ok

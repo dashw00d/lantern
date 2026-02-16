@@ -11,6 +11,8 @@ defmodule Lantern.MCP.Server do
     capabilities: [:tools, :resources, :prompts]
 
   # Tools
+  component(Lantern.MCP.Tools.ListTools)
+  component(Lantern.MCP.Tools.CallToolAPI)
   component(Lantern.MCP.Tools.ListProjects)
   component(Lantern.MCP.Tools.GetProject)
   component(Lantern.MCP.Tools.GetProjectDocs)
