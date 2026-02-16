@@ -52,7 +52,7 @@ defmodule LanternWeb.SystemController do
 
   def shutdown(conn, _params) do
     projects_result =
-      case Manager.deactivate_all() do
+      case safe_deactivate_all_projects() do
         {:ok, projects} -> %{status: :ok, stopped_projects: Enum.map(projects, & &1.name)}
         {:error, reason} -> %{status: :error, error: inspect(reason)}
       end
@@ -97,5 +97,14 @@ defmodule LanternWeb.SystemController do
       :ok -> :ok
       {:error, reason} -> %{error: reason}
     end
+  end
+
+  defp safe_deactivate_all_projects do
+    Manager.deactivate_all()
+  rescue
+    error -> {:error, error}
+  catch
+    :exit, {:timeout, _} -> {:error, :timeout}
+    :exit, reason -> {:error, {:exit, reason}}
   end
 end

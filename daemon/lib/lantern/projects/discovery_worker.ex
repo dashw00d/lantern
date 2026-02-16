@@ -5,6 +5,8 @@ defmodule Lantern.Projects.DiscoveryWorker do
 
   use GenServer
 
+  require Logger
+
   alias Lantern.Projects.Manager
 
   @default_interval_ms :timer.minutes(10)
@@ -22,8 +24,24 @@ defmodule Lantern.Projects.DiscoveryWorker do
 
   @impl true
   def handle_info(:refresh_discovery, state) do
-    _ = Manager.refresh_discovery(:all)
+    _ = safe_refresh_discovery()
     Process.send_after(self(), :refresh_discovery, state.interval_ms)
     {:noreply, state}
+  end
+
+  defp safe_refresh_discovery do
+    Manager.refresh_discovery(:all)
+  rescue
+    error ->
+      Logger.warning("Discovery refresh failed: #{Exception.message(error)}")
+      :error
+  catch
+    :exit, {:timeout, _} = reason ->
+      Logger.warning("Discovery refresh timed out: #{inspect(reason)}")
+      :timeout
+
+    :exit, reason ->
+      Logger.warning("Discovery refresh exited: #{inspect(reason)}")
+      :error
   end
 end
