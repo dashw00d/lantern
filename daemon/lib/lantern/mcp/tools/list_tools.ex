@@ -3,6 +3,7 @@ defmodule Lantern.MCP.Tools.ListTools do
   use Hermes.Server.Component, type: :tool
 
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.{Manager, Project}
 
   @valid_statuses ~w(running stopped error starting stopping needs_config)
@@ -13,14 +14,16 @@ defmodule Lantern.MCP.Tools.ListTools do
   end
 
   def execute(params, frame) do
-    tools =
-      Manager.list()
-      |> Enum.filter(fn p -> p.kind == :tool end)
-      |> maybe_filter_tag(params[:tag])
-      |> maybe_filter_status(params[:status])
-      |> Enum.map(&tool_summary/1)
+    Timeout.run(frame, 10_000, fn ->
+      tools =
+        Manager.list()
+        |> Enum.filter(fn p -> p.kind == :tool end)
+        |> maybe_filter_tag(params[:tag])
+        |> maybe_filter_status(params[:status])
+        |> Enum.map(&tool_summary/1)
 
-    {:reply, Response.tool() |> Response.json(tools), frame}
+      {:reply, Response.tool() |> Response.json(tools), frame}
+    end)
   end
 
   defp tool_summary(%Project{} = p) do

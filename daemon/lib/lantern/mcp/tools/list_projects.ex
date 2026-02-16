@@ -3,6 +3,7 @@ defmodule Lantern.MCP.Tools.ListProjects do
   use Hermes.Server.Component, type: :tool
 
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.{Manager, Project}
 
   @valid_kinds ~w(service project capability website tool)
@@ -19,14 +20,16 @@ defmodule Lantern.MCP.Tools.ListProjects do
   end
 
   def execute(params, frame) do
-    projects =
-      Manager.list()
-      |> maybe_filter_tag(params[:tag])
-      |> maybe_filter_kind(params[:kind])
-      |> maybe_filter_status(params[:status])
-      |> Enum.map(&Project.to_map/1)
+    Timeout.run(frame, 10_000, fn ->
+      projects =
+        Manager.list()
+        |> maybe_filter_tag(params[:tag])
+        |> maybe_filter_kind(params[:kind])
+        |> maybe_filter_status(params[:status])
+        |> Enum.map(&Project.to_map/1)
 
-    {:reply, Response.tool() |> Response.json(projects), frame}
+      {:reply, Response.tool() |> Response.json(projects), frame}
+    end)
   end
 
   defp maybe_filter_tag(projects, nil), do: projects

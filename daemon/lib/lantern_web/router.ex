@@ -90,7 +90,7 @@ defmodule LanternWeb.Router do
 
   # MCP endpoint
   forward("/mcp", Hermes.Server.Transport.StreamableHTTP.Plug,
-    init_opts: [server: Lantern.MCP.Server]
+    server: Lantern.MCP.Server
   )
 
   # Enable LiveDashboard in development

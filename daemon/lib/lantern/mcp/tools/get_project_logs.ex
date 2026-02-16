@@ -4,6 +4,7 @@ defmodule Lantern.MCP.Tools.GetProjectLogs do
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.{Manager, DeployRunner, ProcessRunner}
 
   schema do
@@ -11,21 +12,23 @@ defmodule Lantern.MCP.Tools.GetProjectLogs do
   end
 
   def execute(%{name: name}, frame) do
-    case Manager.get(name) do
-      nil ->
-        {:error, Error.execution("Project '#{name}' not found"), frame}
+    Timeout.run(frame, 15_000, fn ->
+      case Manager.get(name) do
+        nil ->
+          {:error, Error.execution("Project '#{name}' not found"), frame}
 
-      project ->
-        # Try deploy logs first, fall back to local process runner logs
-        case DeployRunner.execute(project, :logs) do
-          {:ok, output} ->
-            {:reply, Response.tool() |> Response.text(output), frame}
+        project ->
+          # Try deploy logs first, fall back to local process runner logs
+          case DeployRunner.execute(project, :logs) do
+            {:ok, output} ->
+              {:reply, Response.tool() |> Response.text(output), frame}
 
-          _ ->
-            logs = try_process_runner_logs(name)
-            {:reply, Response.tool() |> Response.text(logs), frame}
-        end
-    end
+            _ ->
+              logs = try_process_runner_logs(name)
+              {:reply, Response.tool() |> Response.text(logs), frame}
+          end
+      end
+    end)
   end
 
   defp try_process_runner_logs(name) do

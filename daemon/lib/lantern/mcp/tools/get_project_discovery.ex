@@ -4,6 +4,7 @@ defmodule Lantern.MCP.Tools.GetProjectDiscovery do
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.{Manager, Project}
 
   schema do
@@ -11,23 +12,25 @@ defmodule Lantern.MCP.Tools.GetProjectDiscovery do
   end
 
   def execute(%{name: name}, frame) do
-    case Manager.get(name) || Manager.get_by_id(name) do
-      nil ->
-        {:error, Error.execution("Project '#{name}' not found"), frame}
+    Timeout.run(frame, 10_000, fn ->
+      case Manager.get(name) || Manager.get_by_id(name) do
+        nil ->
+          {:error, Error.execution("Project '#{name}' not found"), frame}
 
-      project ->
-        payload = %{
-          name: project.name,
-          docs_auto: project.docs_auto || %{},
-          api_auto: project.api_auto || %{},
-          discovered_docs: project.discovered_docs || [],
-          discovered_endpoints: project.discovered_endpoints || [],
-          docs_available: Project.merged_docs(project),
-          endpoints_available: Project.merged_endpoints(project),
-          discovery: project.discovery || %{}
-        }
+        project ->
+          payload = %{
+            name: project.name,
+            docs_auto: project.docs_auto || %{},
+            api_auto: project.api_auto || %{},
+            discovered_docs: project.discovered_docs || [],
+            discovered_endpoints: project.discovered_endpoints || [],
+            docs_available: Project.merged_docs(project),
+            endpoints_available: Project.merged_endpoints(project),
+            discovery: project.discovery || %{}
+          }
 
-        {:reply, Response.tool() |> Response.json(payload), frame}
-    end
+          {:reply, Response.tool() |> Response.json(payload), frame}
+      end
+    end)
   end
 end

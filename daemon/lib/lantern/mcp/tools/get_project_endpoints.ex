@@ -4,6 +4,7 @@ defmodule Lantern.MCP.Tools.GetProjectEndpoints do
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.{Manager, Project}
 
   schema do
@@ -11,12 +12,14 @@ defmodule Lantern.MCP.Tools.GetProjectEndpoints do
   end
 
   def execute(%{name: name}, frame) do
-    case Manager.get(name) do
-      nil ->
-        {:error, Error.execution("Project '#{name}' not found"), frame}
+    Timeout.run(frame, 10_000, fn ->
+      case Manager.get(name) do
+        nil ->
+          {:error, Error.execution("Project '#{name}' not found"), frame}
 
-      project ->
-        {:reply, Response.tool() |> Response.json(Project.merged_endpoints(project)), frame}
-    end
+        project ->
+          {:reply, Response.tool() |> Response.json(Project.merged_endpoints(project)), frame}
+      end
+    end)
   end
 end

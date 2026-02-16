@@ -16,6 +16,25 @@ info() { echo -e "${BOLD}==>${RESET} $*"; }
 ok() { echo -e "${GREEN}  ✓${RESET} $*"; }
 warn() { echo -e "${YELLOW}  !${RESET} $*"; }
 
+LANTERN_API="http://127.0.0.1:4777/api"
+
+# ---- Step 1: Graceful shutdown via API ----
+info "Requesting graceful shutdown..."
+if curl -sf --max-time 10 -X POST "${LANTERN_API}/system/shutdown" >/dev/null 2>&1; then
+  ok "Shutdown endpoint responded — projects stopping"
+  sleep 2
+else
+  warn "Shutdown endpoint unreachable (daemon may already be down)"
+fi
+
+# ---- Step 2: Stop packaged runtime (if present) ----
+info "Stopping packaged Lantern runtime..."
+if [[ -x /opt/lantern/daemon/bin/lantern ]]; then
+  /opt/lantern/daemon/bin/lantern stop >/dev/null 2>&1 || true
+fi
+pkill -f '/opt/lantern/desktop/lantern-desktop' >/dev/null 2>&1 || true
+
+# ---- Step 3: Kill remaining listeners on :4777 ----
 stop_by_port() {
   local port="$1"
   local pids
@@ -32,16 +51,10 @@ stop_by_port() {
   done
 }
 
-info "Stopping packaged Lantern runtime..."
-if [[ -x /opt/lantern/daemon/bin/lantern ]]; then
-  /opt/lantern/daemon/bin/lantern stop >/dev/null 2>&1 || true
-fi
-pkill -f '/opt/lantern/desktop/lantern-desktop' >/dev/null 2>&1 || true
-
 stop_by_port 4777
 
 sleep 0.3
-if curl -s --max-time 1 http://127.0.0.1:4777/api/system/health >/dev/null 2>&1; then
+if curl -s --max-time 1 "${LANTERN_API}/system/health" >/dev/null 2>&1; then
   warn "Daemon still responding on :4777 (another process may own it)"
 else
   ok "Daemon is stopped"

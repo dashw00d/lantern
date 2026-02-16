@@ -4,6 +4,7 @@ defmodule Lantern.MCP.Tools.GetProjectDocs do
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.{Manager, DocServer}
 
   schema do
@@ -12,26 +13,28 @@ defmodule Lantern.MCP.Tools.GetProjectDocs do
   end
 
   def execute(%{name: name} = params, frame) do
-    case Manager.get(name) do
-      nil ->
-        {:error, Error.execution("Project '#{name}' not found"), frame}
+    Timeout.run(frame, 10_000, fn ->
+      case Manager.get(name) do
+        nil ->
+          {:error, Error.execution("Project '#{name}' not found"), frame}
 
-      project ->
-        if params[:path] do
-          case DocServer.read(project, params.path) do
-            {:ok, content} ->
-              {:reply, Response.tool() |> Response.text(content), frame}
+        project ->
+          if params[:path] do
+            case DocServer.read(project, params.path) do
+              {:ok, content} ->
+                {:reply, Response.tool() |> Response.text(content), frame}
 
-            {:error, :not_found} ->
-              {:error, Error.execution("Document '#{params.path}' not found"), frame}
+              {:error, :not_found} ->
+                {:error, Error.execution("Document '#{params.path}' not found"), frame}
 
-            {:error, reason} ->
-              {:error, Error.execution(inspect(reason)), frame}
+              {:error, reason} ->
+                {:error, Error.execution(inspect(reason)), frame}
+            end
+          else
+            docs = DocServer.list(project)
+            {:reply, Response.tool() |> Response.json(docs), frame}
           end
-        else
-          docs = DocServer.list(project)
-          {:reply, Response.tool() |> Response.json(docs), frame}
-        end
-    end
+      end
+    end)
   end
 end

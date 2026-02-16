@@ -4,6 +4,7 @@ defmodule Lantern.MCP.Tools.RefreshDiscovery do
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.{Manager, Project}
 
   schema do
@@ -11,34 +12,36 @@ defmodule Lantern.MCP.Tools.RefreshDiscovery do
   end
 
   def execute(params, frame) do
-    case params[:name] do
-      nil ->
-        case Manager.refresh_discovery(:all) do
-          {:ok, projects} ->
-            payload = Enum.map(projects, &Project.to_map/1)
-            {:reply, Response.tool() |> Response.json(payload), frame}
+    Timeout.run(frame, 35_000, fn ->
+      case params[:name] do
+        nil ->
+          case Manager.refresh_discovery(:all) do
+            {:ok, projects} ->
+              payload = Enum.map(projects, &Project.to_map/1)
+              {:reply, Response.tool() |> Response.json(payload), frame}
 
-          {:error, reason} ->
-            {:error, Error.execution("Failed to refresh discovery: #{inspect(reason)}"), frame}
-        end
+            {:error, reason} ->
+              {:error, Error.execution("Failed to refresh discovery: #{inspect(reason)}"), frame}
+          end
 
-      name ->
-        project = Manager.get(name) || Manager.get_by_id(name)
+        name ->
+          project = Manager.get(name) || Manager.get_by_id(name)
 
-        case project do
-          nil ->
-            {:error, Error.execution("Project '#{name}' not found"), frame}
+          case project do
+            nil ->
+              {:error, Error.execution("Project '#{name}' not found"), frame}
 
-          found ->
-            case Manager.refresh_discovery(found.name) do
-              {:ok, refreshed} ->
-                {:reply, Response.tool() |> Response.json(Project.to_map(refreshed)), frame}
+            found ->
+              case Manager.refresh_discovery(found.name) do
+                {:ok, refreshed} ->
+                  {:reply, Response.tool() |> Response.json(Project.to_map(refreshed)), frame}
 
-              {:error, reason} ->
-                {:error, Error.execution("Failed to refresh discovery: #{inspect(reason)}"),
-                 frame}
-            end
-        end
-    end
+                {:error, reason} ->
+                  {:error, Error.execution("Failed to refresh discovery: #{inspect(reason)}"),
+                   frame}
+              end
+          end
+      end
+    end)
   end
 end
