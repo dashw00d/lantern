@@ -15,7 +15,7 @@ defmodule Lantern.Projects.Scanner do
 
     workspace_roots =
       if workspace_roots == [] or workspace_roots == nil,
-        do: [Path.expand("~/sites")],
+        do: [Path.expand("~/sites"), Path.expand("~/tools")],
         else: workspace_roots
 
     workspace_roots

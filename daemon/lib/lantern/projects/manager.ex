@@ -126,6 +126,8 @@ defmodule Lantern.Projects.Manager do
   def init(_opts) do
     # Load persisted projects from store
     projects = load_projects()
+    # Scan workspace roots shortly after boot (delay lets Finch etc. start first)
+    Process.send_after(self(), :initial_scan, 500)
     {:ok, %{projects: projects}}
   end
 
@@ -414,7 +416,72 @@ defmodule Lantern.Projects.Manager do
     end
   end
 
+  @impl true
+  def handle_info(:initial_scan, state) do
+    Logger.info("Running initial project scan...")
+    paths = Scanner.scan()
+
+    scanned_projects =
+      Enum.reduce(paths, state.projects, fn path, acc ->
+        name = Path.basename(path)
+
+        case Map.get(acc, name) do
+          nil ->
+            project = path |> Detector.detect() |> Discovery.enrich()
+            Map.put(acc, name, project)
+
+          existing ->
+            updated =
+              if existing.path != path, do: %{existing | path: path}, else: existing
+
+            Map.put(acc, name, Discovery.enrich(updated))
+        end
+      end)
+
+    persist_projects(scanned_projects)
+    broadcast_projects_changed(scanned_projects)
+    Logger.info("Initial scan found #{map_size(scanned_projects)} project(s)")
+
+    # Auto-activate in a background task so we don't block the GenServer
+    activatable_names =
+      scanned_projects
+      |> Enum.filter(fn {_name, p} -> p.enabled && activatable?(p) && p.status != :running end)
+      |> Enum.map(fn {name, _p} -> name end)
+
+    if activatable_names != [] do
+      Task.Supervisor.start_child(Lantern.TaskSupervisor, fn ->
+        auto_activate_projects(activatable_names)
+      end)
+    end
+
+    {:noreply, %{state | projects: scanned_projects}}
+  end
+
   # Private helpers
+
+  defp activatable?(%Project{run_cmd: cmd}) when is_binary(cmd), do: String.trim(cmd) != ""
+  defp activatable?(%Project{upstream_url: url}) when is_binary(url), do: String.trim(url) != ""
+  defp activatable?(_), do: false
+
+  defp auto_activate_projects(names) do
+    Logger.info("Auto-activating #{length(names)} project(s)...")
+
+    for name <- names do
+      case __MODULE__.activate(name) do
+        {:ok, project} ->
+          Logger.info("  Activated #{name} on port #{project.port}")
+
+        {:error, reason} ->
+          Logger.warning("  Failed to activate #{name}: #{inspect(reason)}")
+      end
+    end
+
+    running =
+      __MODULE__.list()
+      |> Enum.count(fn p -> p.status == :running end)
+
+    Logger.info("Auto-activation complete: #{running} project(s) running")
+  end
 
   defp validate_register_attrs(%{name: name, path: path})
        when is_binary(name) and is_binary(path),
@@ -487,6 +554,10 @@ defmodule Lantern.Projects.Manager do
     with :ok <- normalize_caddy_result(Caddy.write_config(project), "write Caddy config"),
          :ok <- normalize_caddy_result(Caddy.reload(), "reload Caddy") do
       :ok
+    else
+      {:error, reason} ->
+        Logger.warning("Caddy config failed for #{project.name}: #{reason} (continuing without reverse proxy)")
+        :ok
     end
   end
 

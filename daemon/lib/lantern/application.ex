@@ -23,9 +23,17 @@ defmodule Lantern.Application do
         Lantern.Templates.Registry,
         Lantern.Profiles.Manager,
         {Task.Supervisor, name: Lantern.TaskSupervisor},
+        Lantern.MCP.InFlight,
+        Lantern.MCP.Jobs,
         {Finch,
          name: Lantern.Finch,
-         pools: %{default: [conn_opts: [transport_opts: [timeout: 5_000]]]}},
+         pools: %{
+           default: [
+             protocols: [:http1],
+             pool_max_idle_time: 4_000,
+             conn_opts: [transport_opts: [timeout: 10_000]]
+           ]
+         }},
         Lantern.Health.Checker,
         Hermes.Server.Registry,
         {Lantern.MCP.Server, transport: :streamable_http},

@@ -1,10 +1,11 @@
 defmodule Lantern.MCP.Tools.CallToolAPI do
   @moduledoc "Call a registered tool's API endpoint through Lantern"
   use Hermes.Server.Component, type: :tool
+  require Logger
 
   alias Hermes.MCP.Error
   alias Hermes.Server.Response
-  alias Lantern.MCP.Tools.Timeout
+  alias Lantern.MCP.{Jobs, Tools.Timeout}
   alias Lantern.Projects.Manager
 
   @valid_methods ~w(GET POST PUT PATCH DELETE)
@@ -17,25 +18,58 @@ defmodule Lantern.MCP.Tools.CallToolAPI do
   end
 
   def execute(%{tool: name, path: path} = params, frame) do
-    Timeout.run(frame, 120_000, fn ->
-      method = (params[:method] || "GET") |> String.upcase()
+    method = (params[:method] || "GET") |> String.upcase()
 
-      with {:ok, tool} <- lookup_tool(name),
-           {:ok, url} <- build_url(tool, path),
-           :ok <- validate_method(method) do
-        case do_request(method, url, params[:body]) do
-          {:ok, body} ->
-            {:reply, Response.tool() |> Response.text(body), frame}
-
-          {:error, reason} ->
-            {:error, Error.execution("Request failed: #{reason}"), frame}
-        end
+    with {:ok, tool} <- lookup_tool(name),
+         {:ok, url} <- build_url(tool, path),
+         :ok <- validate_method(method) do
+      if async_requested?(params) do
+        execute_async(method, url, params[:body], frame)
       else
-        {:error, error} ->
-          {:error, error, frame}
+        execute_sync(method, url, params[:body], frame)
+      end
+    else
+      {:error, error} ->
+        {:error, error, frame}
+    end
+  end
+
+  defp execute_sync(method, url, body, frame) do
+    Timeout.run(frame, 120_000, fn ->
+      case do_request(method, url, body) do
+        {:ok, resp_body} ->
+          {:reply, Response.tool() |> Response.text(resp_body), frame}
+
+        {:error, reason} ->
+          {:error, Error.execution("Request failed: #{reason}"), frame}
       end
     end)
   end
+
+  defp execute_async(method, url, body, frame) do
+    job_id =
+      Jobs.submit(fn ->
+        do_request(method, url, body)
+      end)
+
+    {:reply,
+     Response.tool()
+     |> Response.json(%{
+       status: "submitted",
+       job_id: job_id,
+       message: "Request submitted. Use get_job_result tool with this job_id to poll for results."
+     }), frame}
+  end
+
+  # Check if the caller requested async execution via the JSON body
+  defp async_requested?(%{body: body}) when is_binary(body) do
+    case Jason.decode(body) do
+      {:ok, %{"async" => true}} -> true
+      _ -> false
+    end
+  end
+
+  defp async_requested?(_), do: false
 
   defp lookup_tool(name) do
     case Manager.get(name) do
@@ -70,15 +104,23 @@ defmodule Lantern.MCP.Tools.CallToolAPI do
            receive_timeout: 90_000
          ) do
       {:ok, %Finch.Response{status: status, body: resp_body}} when status < 400 ->
+        Logger.info("[CallToolAPI] #{method} #{url} -> #{status} (#{byte_size(resp_body)} bytes)")
         {:ok, resp_body}
 
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        Logger.error("[CallToolAPI] #{method} #{url} -> HTTP #{status}: #{resp_body}")
         {:error, "HTTP #{status}: #{resp_body}"}
 
       {:error, %Mint.TransportError{reason: reason}} ->
+        Logger.error("[CallToolAPI] #{method} #{url} -> TransportError: #{inspect(reason)}")
         {:error, "Connection failed: #{reason}"}
 
+      {:error, %Mint.HTTPError{} = error} ->
+        Logger.error("[CallToolAPI] #{method} #{url} -> HTTPError: #{Exception.message(error)}")
+        {:error, "HTTP protocol error: #{Exception.message(error)}"}
+
       {:error, reason} ->
+        Logger.error("[CallToolAPI] #{method} #{url} -> Error: #{inspect(reason)}")
         {:error, inspect(reason)}
     end
   end
