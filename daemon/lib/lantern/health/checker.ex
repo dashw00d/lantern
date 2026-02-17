@@ -136,7 +136,7 @@ defmodule Lantern.Health.Checker do
 
         {:error, reason} ->
           latency = System.monotonic_time(:millisecond) - start_time
-          %{status: "unreachable", latency_ms: latency, error: inspect(reason)}
+          %{status: "unreachable", latency_ms: latency, error: friendly_error(reason)}
       end
     rescue
       e ->
@@ -144,6 +144,13 @@ defmodule Lantern.Health.Checker do
         %{status: "error", latency_ms: latency, error: Exception.message(e)}
     end
   end
+
+  defp friendly_error(%{reason: :econnrefused}), do: "connection refused"
+  defp friendly_error(%{reason: :timeout}), do: "connection timed out"
+  defp friendly_error(%{reason: :closed}), do: "connection closed"
+  defp friendly_error(%{reason: :nxdomain}), do: "DNS lookup failed"
+  defp friendly_error(%{reason: reason}) when is_atom(reason), do: Atom.to_string(reason)
+  defp friendly_error(reason), do: inspect(reason)
 
   defp update_result(results, name, check_result) do
     now = DateTime.utc_now() |> DateTime.to_iso8601()
