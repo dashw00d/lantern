@@ -133,35 +133,7 @@ defmodule Lantern.Projects.Manager do
 
   @impl true
   def handle_call(:scan, _from, state) do
-    paths = Scanner.scan()
-
-    discovered_projects =
-      Enum.reduce(paths, %{}, fn path, acc ->
-        name = Path.basename(path)
-
-        case Map.get(state.projects, name) do
-          nil ->
-            # New project - detect it
-            project = path |> Detector.detect() |> Discovery.enrich()
-            Map.put(acc, name, project)
-
-          existing ->
-            # Keep existing project data, update path if it moved
-            updated =
-              existing
-              |> then(fn project ->
-                if project.path != path, do: %{project | path: path}, else: project
-              end)
-              |> Discovery.enrich()
-
-            Map.put(acc, name, updated)
-        end
-      end)
-
-    preserved_projects = preserve_registered_projects(state.projects, discovered_projects)
-
-    new_projects = Map.merge(discovered_projects, preserved_projects)
-
+    new_projects = do_scan(state.projects)
     persist_projects(new_projects)
     broadcast_projects_changed(new_projects)
     {:reply, {:ok, Map.values(new_projects)}, %{state | projects: new_projects}}
@@ -419,24 +391,8 @@ defmodule Lantern.Projects.Manager do
   @impl true
   def handle_info(:initial_scan, state) do
     Logger.info("Running initial project scan...")
-    paths = Scanner.scan()
 
-    scanned_projects =
-      Enum.reduce(paths, state.projects, fn path, acc ->
-        name = Path.basename(path)
-
-        case Map.get(acc, name) do
-          nil ->
-            project = path |> Detector.detect() |> Discovery.enrich()
-            Map.put(acc, name, project)
-
-          existing ->
-            updated =
-              if existing.path != path, do: %{existing | path: path}, else: existing
-
-            Map.put(acc, name, Discovery.enrich(updated))
-        end
-      end)
+    scanned_projects = do_scan(state.projects)
 
     persist_projects(scanned_projects)
     broadcast_projects_changed(scanned_projects)
@@ -458,6 +414,30 @@ defmodule Lantern.Projects.Manager do
   end
 
   # Private helpers
+
+  defp do_scan(existing_projects) do
+    paths = Scanner.scan()
+
+    discovered_projects =
+      Enum.reduce(paths, %{}, fn path, acc ->
+        name = Path.basename(path)
+
+        case Map.get(existing_projects, name) do
+          nil ->
+            project = path |> Detector.detect() |> Discovery.enrich()
+            Map.put(acc, name, project)
+
+          existing ->
+            updated =
+              if existing.path != path, do: %{existing | path: path}, else: existing
+
+            Map.put(acc, name, Discovery.enrich(updated))
+        end
+      end)
+
+    preserved_projects = preserve_registered_projects(existing_projects, discovered_projects)
+    Map.merge(discovered_projects, preserved_projects)
+  end
 
   defp activatable?(%Project{run_cmd: cmd}) when is_binary(cmd), do: String.trim(cmd) != ""
   defp activatable?(%Project{upstream_url: url}) when is_binary(url), do: String.trim(url) != ""
