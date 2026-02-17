@@ -5,7 +5,7 @@ defmodule Lantern.MCP.Prompts.DiagnoseService do
   alias Hermes.Server.Response
 
   schema do
-    field :name, :string, required: true, description: "Project name to diagnose"
+    field(:name, :string, required: true, description: "Project name to diagnose")
   end
 
   def get_messages(%{name: name}, frame) do

@@ -68,6 +68,7 @@ defmodule Lantern.MixProject do
   defp aliases do
     [
       setup: ["deps.get"],
+      "deps.get": ["deps.get", "patch_hermes"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end

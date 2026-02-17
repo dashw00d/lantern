@@ -212,11 +212,17 @@ export function ProjectDetail() {
     { id: 'entry', label: 'Entry' },
     { id: 'run', label: 'Run' },
     { id: 'routing', label: 'Routing' },
-    ...(project.docs?.length ? [{ id: 'docs' as Tab, label: 'Docs' }] : []),
-    ...(project.endpoints?.length ? [{ id: 'endpoints' as Tab, label: 'Endpoints' }] : []),
+    ...((project.docs_available?.length || project.docs?.length)
+      ? [{ id: 'docs' as Tab, label: 'Docs' }]
+      : []),
+    ...((project.endpoints_available?.length || project.endpoints?.length)
+      ? [{ id: 'endpoints' as Tab, label: 'Endpoints' }]
+      : []),
     ...(project.health_endpoint ? [{ id: 'health' as Tab, label: 'Health' }] : []),
     ...(project.depends_on?.length || project.kind === 'service' ? [{ id: 'dependencies' as Tab, label: 'Dependencies' }] : []),
-    ...(project.deploy && Object.keys(project.deploy).length ? [{ id: 'deploy' as Tab, label: 'Deploy' }] : []),
+    ...(project.deploy && Object.keys(project.deploy).length
+      ? [{ id: 'deploy' as Tab, label: 'Commands' }]
+      : []),
     { id: 'mail', label: 'Mail' },
     { id: 'logs', label: 'Logs' },
   ];

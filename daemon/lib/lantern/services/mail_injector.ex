@@ -111,7 +111,9 @@ defmodule Lantern.Services.MailInjector do
   end
 
   defp injection_target(_project_path, framework) when framework in ["django", :django] do
-    content = "EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend\nEMAIL_HOST=127.0.0.1\nEMAIL_PORT=1025\nEMAIL_USE_TLS=False"
+    content =
+      "EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend\nEMAIL_HOST=127.0.0.1\nEMAIL_PORT=1025\nEMAIL_USE_TLS=False"
+
     {".env", content}
   end
 

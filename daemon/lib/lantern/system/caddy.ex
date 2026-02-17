@@ -11,9 +11,13 @@ defmodule Lantern.System.Caddy do
   alias Lantern.Projects.Project
   alias Lantern.System.Privilege
 
+  require Logger
+
   @sites_dir "/etc/caddy/sites.d"
   @caddyfile_path "/etc/caddy/Caddyfile"
   @lighthouse_config_file "__lantern_lighthouse.caddy"
+  @reload_timeout_ms 30_000
+  @restart_timeout_ms 30_000
 
   @doc """
   Returns the base Caddyfile content that imports site configs.
@@ -163,7 +167,21 @@ defmodule Lantern.System.Caddy do
   Reloads the Caddy service to apply config changes.
   """
   def reload do
-    Privilege.sudo("systemctl", ["reload", "caddy"])
+    case Privilege.sudo("systemctl", ["reload", "caddy"], timeout: @reload_timeout_ms) do
+      :ok ->
+        :ok
+
+      {:error, reload_reason} ->
+        Logger.warning("[Caddy] reload failed, attempting restart: #{reload_reason}")
+
+        case Privilege.sudo("systemctl", ["restart", "caddy"], timeout: @restart_timeout_ms) do
+          :ok ->
+            :ok
+
+          {:error, restart_reason} ->
+            {:error, "reload failed: #{reload_reason}; restart failed: #{restart_reason}"}
+        end
+    end
   end
 
   @doc """

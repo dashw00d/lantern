@@ -12,13 +12,15 @@ defmodule Lantern.Projects.Manager do
     Project,
     Scanner,
     Detector,
+    Discovery,
+    DeployRunner,
     PortAllocator,
     ProjectSupervisor,
     ProcessRunner
   }
 
   alias Lantern.System.Caddy
-  alias Lantern.Config.{Settings, Store}
+  alias Lantern.Config.Store
 
   # Client API
 
@@ -37,21 +39,28 @@ defmodule Lantern.Projects.Manager do
   Activates a project: generates Caddy config, starts dev server if needed.
   """
   def activate(name) do
-    GenServer.call(__MODULE__, {:activate, name}, 15_000)
+    GenServer.call(__MODULE__, {:activate, name}, 30_000)
   end
 
   @doc """
   Deactivates a project: stops dev server, removes Caddy config.
   """
   def deactivate(name) do
-    GenServer.call(__MODULE__, {:deactivate, name}, 15_000)
+    GenServer.call(__MODULE__, {:deactivate, name}, 30_000)
+  end
+
+  @doc """
+  Deactivates all running projects.
+  """
+  def deactivate_all do
+    GenServer.call(__MODULE__, :deactivate_all, 30_000)
   end
 
   @doc """
   Restarts a project's dev server.
   """
   def restart(name) do
-    GenServer.call(__MODULE__, {:restart, name}, 15_000)
+    GenServer.call(__MODULE__, {:restart, name}, 30_000)
   end
 
   @doc """
@@ -83,6 +92,21 @@ defmodule Lantern.Projects.Manager do
   end
 
   @doc """
+  Refreshes discovery metadata for one project or all projects.
+  """
+  def refresh_discovery(name \\ :all) do
+    GenServer.call(__MODULE__, {:refresh_discovery, name}, 30_000)
+  end
+
+  @doc """
+  Resets a project's persisted configuration from its local manifest file.
+  Does not write back to the manifest.
+  """
+  def reset_from_manifest(name) do
+    GenServer.call(__MODULE__, {:reset_from_manifest, name}, 15_000)
+  end
+
+  @doc """
   Registers a new project from API input.
   """
   def register(attrs) when is_map(attrs) do
@@ -102,13 +126,14 @@ defmodule Lantern.Projects.Manager do
   def init(_opts) do
     # Load persisted projects from store
     projects = load_projects()
+    # Scan workspace roots shortly after boot (delay lets Finch etc. start first)
+    Process.send_after(self(), :initial_scan, 500)
     {:ok, %{projects: projects}}
   end
 
   @impl true
   def handle_call(:scan, _from, state) do
     paths = Scanner.scan()
-    workspace_roots = configured_workspace_roots()
 
     discovered_projects =
       Enum.reduce(paths, %{}, fn path, acc ->
@@ -117,18 +142,23 @@ defmodule Lantern.Projects.Manager do
         case Map.get(state.projects, name) do
           nil ->
             # New project - detect it
-            project = Detector.detect(path)
+            project = path |> Detector.detect() |> Discovery.enrich()
             Map.put(acc, name, project)
 
           existing ->
             # Keep existing project data, update path if it moved
-            updated = if existing.path != path, do: %{existing | path: path}, else: existing
+            updated =
+              existing
+              |> then(fn project ->
+                if project.path != path, do: %{project | path: path}, else: project
+              end)
+              |> Discovery.enrich()
+
             Map.put(acc, name, updated)
         end
       end)
 
-    preserved_projects =
-      preserve_registered_projects(state.projects, discovered_projects, workspace_roots)
+    preserved_projects = preserve_registered_projects(state.projects, discovered_projects)
 
     new_projects = Map.merge(discovered_projects, preserved_projects)
 
@@ -175,6 +205,27 @@ defmodule Lantern.Projects.Manager do
         broadcast_projects_changed(new_projects)
         {:reply, {:ok, updated_project}, %{state | projects: new_projects}}
     end
+  end
+
+  @impl true
+  def handle_call(:deactivate_all, _from, state) do
+    {new_projects, changed_projects} =
+      Enum.reduce(state.projects, {%{}, []}, fn {name, project}, {acc, changed} ->
+        next_project =
+          if project.status in [:running, :starting, :stopping, :error] do
+            do_deactivate(project)
+          else
+            project
+          end
+
+        next_changed = if next_project == project, do: changed, else: [next_project | changed]
+        {Map.put(acc, name, next_project), next_changed}
+      end)
+
+    persist_projects(new_projects)
+    Enum.each(changed_projects, &broadcast_project_updated/1)
+    broadcast_projects_changed(new_projects)
+    {:reply, {:ok, Map.values(new_projects)}, %{state | projects: new_projects}}
   end
 
   @impl true
@@ -262,10 +313,38 @@ defmodule Lantern.Projects.Manager do
   end
 
   @impl true
+  def handle_call({:refresh_discovery, :all}, _from, state) do
+    refreshed =
+      state.projects
+      |> Enum.map(fn {name, project} -> {name, Discovery.enrich(project)} end)
+      |> Map.new()
+
+    persist_projects(refreshed)
+    broadcast_projects_changed(refreshed)
+    {:reply, {:ok, Map.values(refreshed)}, %{state | projects: refreshed}}
+  end
+
+  @impl true
+  def handle_call({:refresh_discovery, name}, _from, state) do
+    case Map.get(state.projects, name) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      project ->
+        refreshed_project = Discovery.enrich(project)
+        new_projects = Map.put(state.projects, name, refreshed_project)
+        persist_projects(new_projects)
+        broadcast_project_updated(refreshed_project)
+        broadcast_projects_changed(new_projects)
+        {:reply, {:ok, refreshed_project}, %{state | projects: new_projects}}
+    end
+  end
+
+  @impl true
   def handle_call({:register, attrs}, _from, state) do
     with {:ok, name} <- validate_register_attrs(attrs),
          nil <- Map.get(state.projects, name) do
-      project = Project.new(attrs)
+      project = attrs |> Project.new() |> Discovery.enrich()
 
       case Project.validate(project) do
         {:ok, valid_project} ->
@@ -288,6 +367,41 @@ defmodule Lantern.Projects.Manager do
   end
 
   @impl true
+  def handle_call({:reset_from_manifest, name}, _from, state) do
+    case Map.get(state.projects, name) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      %Project{} = current_project ->
+        case Detector.detect_from_manifest(current_project.path, current_project.name) do
+          {:ok, manifest_project} ->
+            reset_project =
+              manifest_project
+              |> preserve_runtime_fields(current_project)
+              |> Discovery.enrich()
+
+            case Project.validate(reset_project) do
+              {:ok, valid_project} ->
+                new_projects = Map.put(state.projects, name, valid_project)
+                persist_projects(new_projects)
+                broadcast_project_updated(valid_project)
+                broadcast_projects_changed(new_projects)
+                {:reply, {:ok, valid_project}, %{state | projects: new_projects}}
+
+              {:error, reasons} ->
+                {:reply, {:error, {:validation, reasons}}, state}
+            end
+
+          {:error, :manifest_not_found} ->
+            {:reply, {:error, :manifest_not_found}, state}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
+    end
+  end
+
+  @impl true
   def handle_call({:deregister, name}, _from, state) do
     case Map.get(state.projects, name) do
       nil ->
@@ -302,7 +416,72 @@ defmodule Lantern.Projects.Manager do
     end
   end
 
+  @impl true
+  def handle_info(:initial_scan, state) do
+    Logger.info("Running initial project scan...")
+    paths = Scanner.scan()
+
+    scanned_projects =
+      Enum.reduce(paths, state.projects, fn path, acc ->
+        name = Path.basename(path)
+
+        case Map.get(acc, name) do
+          nil ->
+            project = path |> Detector.detect() |> Discovery.enrich()
+            Map.put(acc, name, project)
+
+          existing ->
+            updated =
+              if existing.path != path, do: %{existing | path: path}, else: existing
+
+            Map.put(acc, name, Discovery.enrich(updated))
+        end
+      end)
+
+    persist_projects(scanned_projects)
+    broadcast_projects_changed(scanned_projects)
+    Logger.info("Initial scan found #{map_size(scanned_projects)} project(s)")
+
+    # Auto-activate in a background task so we don't block the GenServer
+    activatable_names =
+      scanned_projects
+      |> Enum.filter(fn {_name, p} -> p.enabled && activatable?(p) && p.status != :running end)
+      |> Enum.map(fn {name, _p} -> name end)
+
+    if activatable_names != [] do
+      Task.Supervisor.start_child(Lantern.TaskSupervisor, fn ->
+        auto_activate_projects(activatable_names)
+      end)
+    end
+
+    {:noreply, %{state | projects: scanned_projects}}
+  end
+
   # Private helpers
+
+  defp activatable?(%Project{run_cmd: cmd}) when is_binary(cmd), do: String.trim(cmd) != ""
+  defp activatable?(%Project{upstream_url: url}) when is_binary(url), do: String.trim(url) != ""
+  defp activatable?(_), do: false
+
+  defp auto_activate_projects(names) do
+    Logger.info("Auto-activating #{length(names)} project(s)...")
+
+    for name <- names do
+      case __MODULE__.activate(name) do
+        {:ok, project} ->
+          Logger.info("  Activated #{name} on port #{project.port}")
+
+        {:error, reason} ->
+          Logger.warning("  Failed to activate #{name}: #{inspect(reason)}")
+      end
+    end
+
+    running =
+      __MODULE__.list()
+      |> Enum.count(fn p -> p.status == :running end)
+
+    Logger.info("Auto-activation complete: #{running} project(s) running")
+  end
 
   defp validate_register_attrs(%{name: name, path: path})
        when is_binary(name) and is_binary(path),
@@ -330,8 +509,10 @@ defmodule Lantern.Projects.Manager do
   defp do_activate(%Project{type: :proxy} = project) do
     with {:ok, port} <- PortAllocator.allocate(project.name) do
       project = %{project | port: port, status: :starting}
+      project = maybe_compute_base_url(project)
 
-      with :ok <- ensure_caddy_config(project),
+      with :ok <- validate_runtime_port_strategy(project),
+           :ok <- ensure_caddy_config(project),
            :ok <- maybe_start_managed_command(project) do
         {:ok, %{project | status: :running}}
       else
@@ -373,6 +554,10 @@ defmodule Lantern.Projects.Manager do
     with :ok <- normalize_caddy_result(Caddy.write_config(project), "write Caddy config"),
          :ok <- normalize_caddy_result(Caddy.reload(), "reload Caddy") do
       :ok
+    else
+      {:error, reason} ->
+        Logger.warning("Caddy config failed for #{project.name}: #{reason} (continuing without reverse proxy)")
+        :ok
     end
   end
 
@@ -400,12 +585,23 @@ defmodule Lantern.Projects.Manager do
   end
 
   defp maybe_start_managed_command(%Project{} = project) do
+    if runtime_command_configured?(project, :start) do
+      maybe_run_runtime_command(project, :start)
+    else
+      maybe_start_run_cmd(project)
+    end
+  end
+
+  defp maybe_start_run_cmd(%Project{} = project) do
     run_cmd = project.run_cmd |> to_string() |> String.trim()
 
     if run_cmd == "" do
       :ok
     else
-      start_project_runner(project)
+      with :ok <- start_project_runner(project),
+           :ok <- wait_for_runtime_ready(project) do
+        :ok
+      end
     end
   end
 
@@ -453,6 +649,8 @@ defmodule Lantern.Projects.Manager do
 
   defp do_deactivate(%Project{type: :proxy} = project) do
     stop_project_runner(project.name)
+    stop_listener_on_port(project.port)
+    _ = maybe_run_runtime_command(project, :stop)
     Caddy.remove_config(project.name)
     Caddy.reload()
     PortAllocator.release(project.name)
@@ -462,6 +660,8 @@ defmodule Lantern.Projects.Manager do
 
   defp do_deactivate(%Project{} = project) do
     stop_project_runner(project.name)
+    stop_listener_on_port(project.port)
+    _ = maybe_run_runtime_command(project, :stop)
     Caddy.remove_config(project.name)
     Caddy.reload()
     %{project | status: :stopped, pid: nil}
@@ -469,6 +669,16 @@ defmodule Lantern.Projects.Manager do
 
   defp maybe_release_port(%Project{type: :proxy, name: name}), do: PortAllocator.release(name)
   defp maybe_release_port(_project), do: :ok
+
+  # When base_url is not explicitly configured, derive it from the assigned port.
+  # This allows tools to use ${PORT} for dynamic port assignment and have
+  # service discovery return the correct URL automatically.
+  defp maybe_compute_base_url(%Project{base_url: nil, port: port} = project)
+       when is_integer(port) do
+    %{project | base_url: "http://127.0.0.1:#{port}"}
+  end
+
+  defp maybe_compute_base_url(project), do: project
 
   @updatable_fields [
     :type,
@@ -491,6 +701,8 @@ defmodule Lantern.Projects.Manager do
     :deploy,
     :docs,
     :endpoints,
+    :docs_auto,
+    :api_auto,
     :depends_on,
     :routing
   ]
@@ -501,7 +713,7 @@ defmodule Lantern.Projects.Manager do
       |> Map.take(@updatable_fields)
       |> normalize_project_updates(project)
 
-    updated = struct(project, updates)
+    updated = struct(project, updates) |> Discovery.enrich()
 
     case Project.validate(updated) do
       {:ok, valid_project} -> {:ok, valid_project}
@@ -604,14 +816,22 @@ defmodule Lantern.Projects.Manager do
     }
   end
 
-  defp maybe_deactivate_for_rename(updated_project, _current_project, _current_name, _target_name),
-    do: updated_project
+  defp maybe_deactivate_for_rename(
+         updated_project,
+         _current_project,
+         _current_name,
+         _target_name
+       ),
+       do: updated_project
 
   defp apply_name_change(%Project{} = project, current_name, target_name)
        when current_name != target_name do
     tld = Application.get_env(:lantern, :tld, ".glow")
     default_domain = current_name <> tld
-    next_domain = if project.domain == default_domain, do: target_name <> tld, else: project.domain
+
+    next_domain =
+      if project.domain == default_domain, do: target_name <> tld, else: project.domain
+
     next_id = if project.id in [nil, current_name], do: target_name, else: project.id
 
     %{project | name: target_name, domain: next_domain, id: next_id}
@@ -630,8 +850,9 @@ defmodule Lantern.Projects.Manager do
   defp normalize_target_name(_requested_name, _current_name),
     do: {:error, "name must be a non-empty string"}
 
-  defp ensure_name_available(target_name, current_name, _projects) when target_name == current_name,
-    do: :ok
+  defp ensure_name_available(target_name, current_name, _projects)
+       when target_name == current_name,
+       do: :ok
 
   defp ensure_name_available(target_name, _current_name, projects) do
     if Map.has_key?(projects, target_name) do
@@ -641,14 +862,7 @@ defmodule Lantern.Projects.Manager do
     end
   end
 
-  defp configured_workspace_roots do
-    case Settings.get(:workspace_roots) do
-      roots when is_list(roots) and roots != [] -> Enum.map(roots, &Path.expand/1)
-      _ -> [Path.expand("~/sites")]
-    end
-  end
-
-  defp preserve_registered_projects(existing_projects, discovered_projects, workspace_roots) do
+  defp preserve_registered_projects(existing_projects, discovered_projects) do
     Enum.reduce(existing_projects, %{}, fn {name, project}, acc ->
       case project do
         %Project{} ->
@@ -659,9 +873,6 @@ defmodule Lantern.Projects.Manager do
             not persistent_project?(project) ->
               acc
 
-            project_in_workspace_roots?(project.path, workspace_roots) ->
-              acc
-
             true ->
               Map.put(acc, name, project)
           end
@@ -669,15 +880,6 @@ defmodule Lantern.Projects.Manager do
         _ ->
           acc
       end
-    end)
-  end
-
-  defp project_in_workspace_roots?(path, workspace_roots) when is_binary(path) do
-    expanded_path = Path.expand(path)
-
-    Enum.any?(workspace_roots, fn root ->
-      expanded_root = Path.expand(root)
-      expanded_path == expanded_root or String.starts_with?(expanded_path, expanded_root <> "/")
     end)
   end
 
@@ -713,6 +915,178 @@ defmodule Lantern.Projects.Manager do
     Store.put(:projects, serialized)
   rescue
     _ -> :ok
+  end
+
+  defp maybe_run_runtime_command(%Project{} = project, command)
+       when command in [:start, :stop] do
+    deploy = project.deploy || %{}
+
+    case Map.get(deploy, command) do
+      value when is_binary(value) and value != "" ->
+        case DeployRunner.execute(project, command) do
+          {:ok, _output} ->
+            :ok
+
+          {:error, %{output: output, exit_code: code}} ->
+            {:error, "runtime #{command} failed (#{code}): #{output}"}
+
+          {:error, reason} when is_binary(reason) ->
+            {:error, "runtime #{command} failed: #{reason}"}
+
+          {:error, reason} ->
+            {:error, "runtime #{command} failed: #{inspect(reason)}"}
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp runtime_command_configured?(%Project{} = project, command)
+       when command in [:start, :stop] do
+    deploy = project.deploy || %{}
+
+    case Map.get(deploy, command) do
+      value when is_binary(value) -> String.trim(value) != ""
+      _ -> false
+    end
+  end
+
+  defp wait_for_runtime_ready(%Project{} = project) do
+    run_cmd = project.run_cmd |> to_string() |> String.trim()
+
+    cond do
+      project.type != :proxy ->
+        :ok
+
+      run_cmd == "" ->
+        :ok
+
+      is_integer(project.port) == false ->
+        :ok
+
+      true ->
+        timeout_ms = Application.get_env(:lantern, :project_start_timeout_ms, 15_000)
+        interval_ms = 150
+        deadline_ms = System.monotonic_time(:millisecond) + timeout_ms
+        wait_for_port(project, deadline_ms, interval_ms, timeout_ms)
+    end
+  end
+
+  defp wait_for_port(%Project{} = project, deadline_ms, interval_ms, timeout_ms) do
+    cond do
+      tcp_port_open?(project.port) ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline_ms ->
+        {:error,
+         "runtime did not bind to 127.0.0.1:#{project.port} within #{timeout_ms}ms (start command may have failed)"}
+
+      true ->
+        status = safe_runner_status(project.name)
+
+        if status == :error do
+          {:error, "runtime process exited during startup"}
+        else
+          Process.sleep(interval_ms)
+          wait_for_port(project, deadline_ms, interval_ms, timeout_ms)
+        end
+    end
+  end
+
+  defp tcp_port_open?(port) when is_integer(port) do
+    case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 250) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp tcp_port_open?(_), do: false
+
+  defp stop_listener_on_port(port) when is_integer(port) and port > 0 do
+    pids = listener_pids(port)
+
+    Enum.each(pids, fn pid ->
+      _ = System.cmd("kill", ["-TERM", pid], stderr_to_stdout: true)
+    end)
+
+    if pids != [] do
+      Process.sleep(200)
+
+      listener_pids(port)
+      |> Enum.each(fn pid ->
+        _ = System.cmd("kill", ["-KILL", pid], stderr_to_stdout: true)
+      end)
+    end
+  rescue
+    _ -> :ok
+  end
+
+  defp stop_listener_on_port(_), do: :ok
+
+  defp listener_pids(port) do
+    case System.cmd("lsof", ["-tiTCP:#{port}", "-sTCP:LISTEN"], stderr_to_stdout: true) do
+      {output, 0} ->
+        output
+        |> String.split("\n", trim: true)
+        |> Enum.reject(&(&1 == ""))
+
+      _ ->
+        []
+    end
+  end
+
+  defp safe_runner_status(name) do
+    ProcessRunner.get_status(name)
+  rescue
+    _ -> :unknown
+  catch
+    :exit, _ -> :unknown
+  end
+
+  defp validate_runtime_port_strategy(%Project{} = project) do
+    run_cmd = project.run_cmd |> to_string() |> String.trim()
+
+    cond do
+      run_cmd == "" ->
+        :ok
+
+      runtime_command_configured?(project, :start) ->
+        deploy_start = get_in(project.deploy || %{}, [:start]) |> to_string()
+
+        cond do
+          is_binary(project.upstream_url) and String.trim(project.upstream_url) != "" ->
+            :ok
+
+          String.contains?(deploy_start, "${PORT}") or String.contains?(deploy_start, "$PORT") ->
+            :ok
+
+          true ->
+            {:error,
+             "deploy.start must use ${PORT} or upstream_url must be set so Caddy can route traffic"}
+        end
+
+      String.contains?(run_cmd, "${PORT}") or String.contains?(run_cmd, "$PORT") ->
+        :ok
+
+      true ->
+        {:error,
+         "run_cmd must use ${PORT} (or configure upstream_url/deploy.start) to avoid port conflicts"}
+    end
+  end
+
+  defp preserve_runtime_fields(%Project{} = next_project, %Project{} = current_project) do
+    %{
+      next_project
+      | status: current_project.status,
+        pid: current_project.pid,
+        port: current_project.port,
+        registered_at: current_project.registered_at
+    }
   end
 
   defp persistent_project?(%Project{upstream_url: upstream_url}) when is_binary(upstream_url),

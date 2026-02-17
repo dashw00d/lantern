@@ -11,24 +11,30 @@ defmodule Lantern.MCP.Server do
     capabilities: [:tools, :resources, :prompts]
 
   # Tools
-  component Lantern.MCP.Tools.ListProjects
-  component Lantern.MCP.Tools.GetProject
-  component Lantern.MCP.Tools.GetProjectDocs
-  component Lantern.MCP.Tools.GetProjectEndpoints
-  component Lantern.MCP.Tools.CheckHealth
-  component Lantern.MCP.Tools.StartProject
-  component Lantern.MCP.Tools.StopProject
-  component Lantern.MCP.Tools.RestartProject
-  component Lantern.MCP.Tools.GetProjectLogs
-  component Lantern.MCP.Tools.SearchProjects
-  component Lantern.MCP.Tools.GetDependencies
-  component Lantern.MCP.Tools.GetPorts
+  component(Lantern.MCP.Tools.ListTools)
+  component(Lantern.MCP.Tools.CallToolAPI)
+  component(Lantern.MCP.Tools.GetJobResult)
+  component(Lantern.MCP.Tools.ListProjects)
+  component(Lantern.MCP.Tools.GetProject)
+  component(Lantern.MCP.Tools.GetProjectDocs)
+  component(Lantern.MCP.Tools.GetProjectEndpoints)
+  component(Lantern.MCP.Tools.GetProjectDiscovery)
+  component(Lantern.MCP.Tools.CheckHealth)
+  component(Lantern.MCP.Tools.StartProject)
+  component(Lantern.MCP.Tools.StopProject)
+  component(Lantern.MCP.Tools.RestartProject)
+  component(Lantern.MCP.Tools.GetProjectLogs)
+  component(Lantern.MCP.Tools.SearchProjects)
+  component(Lantern.MCP.Tools.GetDependencies)
+  component(Lantern.MCP.Tools.GetPorts)
+  component(Lantern.MCP.Tools.RefreshDiscovery)
 
   # Resources
-  component Lantern.MCP.Resources.ProjectMetadata
-  component Lantern.MCP.Resources.ProjectDocs
+  component(Lantern.MCP.Resources.ProjectMetadata)
+  component(Lantern.MCP.Resources.ProjectDocs)
+  component(Lantern.MCP.Resources.ProjectDiscovery)
 
   # Prompts
-  component Lantern.MCP.Prompts.DiagnoseService
-  component Lantern.MCP.Prompts.DependencyTrace
+  component(Lantern.MCP.Prompts.DiagnoseService)
+  component(Lantern.MCP.Prompts.DependencyTrace)
 end

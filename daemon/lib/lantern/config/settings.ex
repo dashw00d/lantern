@@ -38,13 +38,19 @@ defmodule Lantern.Config.Settings do
 
   @impl true
   def init(opts) do
-    state_dir = Keyword.get(opts, :state_dir) || Application.get_env(:lantern, :state_dir, default_state_dir())
+    state_dir =
+      Keyword.get(opts, :state_dir) ||
+        Application.get_env(:lantern, :state_dir, default_state_dir())
+
     settings_path = Path.join(state_dir, "settings.json")
 
     settings =
       @default_settings
       |> Map.put(:state_dir, state_dir)
-      |> Map.put(:workspace_roots, Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")]))
+      |> Map.put(
+        :workspace_roots,
+        Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")])
+      )
       |> Map.put(:tld, Application.get_env(:lantern, :tld, ".glow"))
       |> merge_from_file(settings_path)
 

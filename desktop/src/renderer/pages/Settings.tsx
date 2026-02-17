@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Plus, X, Save, RotateCw } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { useAppStore } from '../stores/appStore';
+import { api } from '../api/client';
+import { getLanternBridge, isElectronRuntime } from '../lib/electron';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
@@ -11,7 +13,9 @@ import { Card } from '../components/ui/Card';
 export function Settings() {
   const { settings, update } = useSettings();
   const addToast = useAppStore((s) => s.addToast);
+  const setProjects = useAppStore((s) => s.setProjects);
   const [saving, setSaving] = useState(false);
+  const [shuttingDown, setShuttingDown] = useState(false);
 
   // Local form state
   const [tld, setTld] = useState(settings?.tld || '.glow');
@@ -25,6 +29,7 @@ export function Settings() {
     settings?.workspace_roots || ['~/sites']
   );
   const [newRoot, setNewRoot] = useState('');
+  const [browsingRoot, setBrowsingRoot] = useState(false);
 
   // Sync local form state when server settings load
   useEffect(() => {
@@ -36,15 +41,59 @@ export function Settings() {
     }
   }, [settings]);
 
+  const appendRoot = (candidate: string): boolean => {
+    const normalized = candidate.trim();
+    if (!normalized || workspaceRoots.includes(normalized)) {
+      return false;
+    }
+
+    setWorkspaceRoots([...workspaceRoots, normalized]);
+    return true;
+  };
+
   const addRoot = () => {
-    if (newRoot && !workspaceRoots.includes(newRoot)) {
-      setWorkspaceRoots([...workspaceRoots, newRoot]);
+    if (appendRoot(newRoot)) {
       setNewRoot('');
     }
   };
 
   const removeRoot = (root: string) => {
     setWorkspaceRoots(workspaceRoots.filter((r) => r !== root));
+  };
+
+  const handleBrowseRoot = async () => {
+    const bridge = getLanternBridge();
+
+    if (!bridge) {
+      addToast({
+        type: 'warning',
+        message: isElectronRuntime()
+          ? 'Desktop bridge is unavailable. Restart Lantern and try again, or enter the path manually.'
+          : 'Folder picker is only available in the desktop app. Enter the path manually.',
+      });
+      return;
+    }
+
+    setBrowsingRoot(true);
+    try {
+      const selected = await bridge.pickFolder();
+      if (selected) {
+        const wasAdded = appendRoot(selected);
+        if (wasAdded) {
+          setNewRoot('');
+          addToast({ type: 'success', message: 'Workspace root added' });
+        } else {
+          setNewRoot(selected);
+        }
+      }
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: `Failed to open folder picker: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      });
+    } finally {
+      setBrowsingRoot(false);
+    }
   };
 
   const handleSave = async () => {
@@ -56,11 +105,46 @@ export function Settings() {
         caddy_mode: caddyMode as 'files' | 'admin_api',
         workspace_roots: workspaceRoots,
       });
-      addToast({ type: 'success', message: 'Settings saved' });
     } catch {
-      addToast({ type: 'error', message: 'Failed to save settings' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleShutdownAll = async () => {
+    const confirmed = window.confirm(
+      'Shutdown all Lantern runtime? This deactivates all projects and stops managed services.'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setShuttingDown(true);
+    try {
+      const res = await api.shutdownSystem();
+
+      const projects = await api.listProjects({ includeHidden: true });
+      setProjects(projects.data);
+
+      if (res.data.status === 'ok') {
+        addToast({
+          type: 'success',
+          message: 'Shutdown complete: all projects and managed services stopped.',
+        });
+      } else {
+        addToast({
+          type: 'warning',
+          message: 'Shutdown partially completed. Check system status for details.',
+        });
+      }
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: `Shutdown failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      });
+    } finally {
+      setShuttingDown(false);
     }
   };
 
@@ -107,6 +191,13 @@ export function Settings() {
               placeholder="/home/user/projects"
               className="flex-1 font-mono"
             />
+            <Button
+              variant="secondary"
+              onClick={handleBrowseRoot}
+              disabled={browsingRoot}
+            >
+              {browsingRoot ? 'Opening...' : 'Browse'}
+            </Button>
             <Button variant="secondary" onClick={addRoot}>
               <Plus className="h-4 w-4" />
               Add
@@ -169,8 +260,15 @@ export function Settings() {
         </p>
       </Card>
 
-      {/* Save button */}
-      <div className="flex justify-end">
+      {/* Save + runtime actions */}
+      <div className="flex justify-between gap-3">
+        <Button
+          variant="destructive"
+          onClick={handleShutdownAll}
+          disabled={shuttingDown}
+        >
+          {shuttingDown ? 'Shutting Down...' : 'Shutdown All Runtime'}
+        </Button>
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <RotateCw className="h-4 w-4 animate-spin" />

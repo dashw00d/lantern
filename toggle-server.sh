@@ -57,8 +57,11 @@ case "${1:-status}" in
 import /etc/caddy/sites.d/*.caddy
 EOF
 
-        systemctl start caddy
-        success "caddy started on ports 80/443"
+        # "start" is a no-op when caddy is already active but stuck in a
+        # bad reload state; restart forces a clean config apply.
+        systemctl reset-failed caddy >/dev/null 2>&1 || true
+        systemctl restart caddy
+        success "caddy restarted on ports 80/443"
 
         show_status
         echo "  Your .glow sites are now available at https://<name>.glow"

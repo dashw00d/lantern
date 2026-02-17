@@ -28,7 +28,10 @@ defmodule LanternWeb.HealthController do
       {:error, :not_found} ->
         conn
         |> put_status(:not_found)
-        |> json(%{error: "not_found", message: "Project '#{name}' not found or not health-checkable"})
+        |> json(%{
+          error: "not_found",
+          message: "Project '#{name}' not found or not health-checkable"
+        })
 
       {:error, reason} ->
         conn

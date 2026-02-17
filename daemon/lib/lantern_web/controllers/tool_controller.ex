@@ -127,6 +127,9 @@ defmodule LanternWeb.ToolController do
     agents = Map.get(routing, :agents) || []
     risk = Map.get(routing, :risk)
 
+    docs_available = Project.merged_docs(project)
+    endpoints_available = Project.merged_endpoints(project)
+
     %{
       id: tool_id(project),
       name: project.name,
@@ -144,7 +147,10 @@ defmodule LanternWeb.ToolController do
       max_concurrent: Map.get(routing, :max_concurrent, 1),
       triggers: triggers,
       risk: risk,
-      agents: agents
+      agents: agents,
+      docs_count: length(docs_available),
+      endpoints_count: length(endpoints_available),
+      discovery_refreshed_at: get_in(project.discovery || %{}, [:refreshed_at])
     }
   end
 
@@ -154,8 +160,15 @@ defmodule LanternWeb.ToolController do
       repo_path: project.path,
       run_cmd: project.run_cmd,
       endpoints: project.endpoints || [],
+      discovered_endpoints: project.discovered_endpoints || [],
+      endpoints_available: Project.merged_endpoints(project),
       docs: project.docs || [],
-      docs_paths: Enum.map(project.docs || [], fn doc -> doc.path end),
+      discovered_docs: project.discovered_docs || [],
+      docs_available: Project.merged_docs(project),
+      docs_paths: Enum.map(Project.merged_docs(project), fn doc -> doc.path end),
+      docs_auto: project.docs_auto || %{},
+      api_auto: project.api_auto || %{},
+      discovery: project.discovery || %{},
       routing: project.routing,
       depends_on: project.depends_on || [],
       repo_url: project.repo_url
@@ -172,6 +185,7 @@ defmodule LanternWeb.ToolController do
     base = %{
       path: doc.path,
       kind: doc.kind,
+      source: Map.get(doc, :source),
       exists: doc.exists,
       size: doc.size,
       mtime: doc.mtime

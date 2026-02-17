@@ -39,7 +39,8 @@ defmodule LanternWeb.ProjectChannel do
             :exit, _ -> []
           end
 
-        {:ok, %{project: Project.to_map(project), logs: logs}, assign(socket, :project_name, name)}
+        {:ok, %{project: Project.to_map(project), logs: logs},
+         assign(socket, :project_name, name)}
     end
   end
 

@@ -9,7 +9,7 @@ defmodule Lantern.Config.LanternYml do
   @supported_keys ~w(
     type domain root run routing features template
     id name description kind base_url upstream_url health_endpoint repo_url
-    tags enabled deploy docs endpoints depends_on
+    tags enabled deploy docs endpoints depends_on docs_auto api_auto
   )
 
   @supported_key_map Map.new(@supported_keys, fn key -> {key, String.to_atom(key)} end)
@@ -122,6 +122,8 @@ defmodule Lantern.Config.LanternYml do
       |> maybe_put(:deploy, yml_attrs[:deploy])
       |> maybe_put(:docs, yml_attrs[:docs])
       |> maybe_put(:endpoints, yml_attrs[:endpoints])
+      |> maybe_put(:docs_auto, yml_attrs[:docs_auto])
+      |> maybe_put(:api_auto, yml_attrs[:api_auto])
       |> maybe_put(:depends_on, yml_attrs[:depends_on])
       |> maybe_put(:routing, yml_attrs[:routing])
 
@@ -203,6 +205,28 @@ defmodule Lantern.Config.LanternYml do
     Enum.map(value, &normalize_endpoint_entry/1)
   end
 
+  defp normalize_value(:docs_auto, value) when is_map(value) do
+    %{
+      enabled: normalize_bool(value["enabled"], true),
+      patterns: normalize_string_list(value["patterns"]),
+      ignore: normalize_string_list(value["ignore"]),
+      max_files: normalize_int(value["max_files"]),
+      max_bytes: normalize_int(value["max_bytes"])
+    }
+    |> reject_nil_values()
+  end
+
+  defp normalize_value(:api_auto, value) when is_map(value) do
+    %{
+      enabled: normalize_bool(value["enabled"], true),
+      sources: normalize_string_list(value["sources"]),
+      candidates: normalize_string_list(value["candidates"]),
+      timeout_ms: normalize_int(value["timeout_ms"]),
+      max_endpoints: normalize_int(value["max_endpoints"])
+    }
+    |> reject_nil_values()
+  end
+
   defp normalize_value(:tags, value) when is_list(value), do: value
   defp normalize_value(:depends_on, value) when is_list(value), do: value
 
@@ -248,6 +272,59 @@ defmodule Lantern.Config.LanternYml do
   end
 
   defp normalize_endpoint_entry(entry), do: entry
+
+  defp normalize_string_list(nil), do: nil
+
+  defp normalize_string_list(value) when is_list(value) do
+    value
+    |> Enum.map(&to_string/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  defp normalize_string_list(value) when is_binary(value) do
+    value
+    |> String.split(~r/[\n,]/, trim: true)
+    |> normalize_string_list()
+  end
+
+  defp normalize_string_list(_), do: nil
+
+  defp normalize_bool(nil, default), do: default
+  defp normalize_bool(value, _default) when is_boolean(value), do: value
+  defp normalize_bool(value, _default) when value in [1, "1"], do: true
+  defp normalize_bool(value, _default) when value in [0, "0"], do: false
+
+  defp normalize_bool(value, default) when is_binary(value) do
+    case String.downcase(String.trim(value)) do
+      v when v in ["true", "yes", "on"] -> true
+      v when v in ["false", "no", "off"] -> false
+      _ -> default
+    end
+  end
+
+  defp normalize_bool(_value, default), do: default
+
+  defp normalize_int(nil), do: nil
+  defp normalize_int(value) when is_integer(value), do: value
+
+  defp normalize_int(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> Integer.parse()
+    |> case do
+      {int, ""} -> int
+      _ -> nil
+    end
+  end
+
+  defp normalize_int(_), do: nil
+
+  defp reject_nil_values(map) do
+    map
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
 
   defp normalize_env(nil), do: %{}
   defp normalize_env(env) when is_map(env), do: env

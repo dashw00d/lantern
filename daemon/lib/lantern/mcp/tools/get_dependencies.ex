@@ -3,34 +3,37 @@ defmodule Lantern.MCP.Tools.GetDependencies do
   use Hermes.Server.Component, type: :tool
 
   alias Hermes.Server.Response
+  alias Lantern.MCP.Tools.Timeout
   alias Lantern.Projects.Manager
 
   schema do
-    field :name, :string, description: "Project name (omit for full graph)"
+    field(:name, :string, description: "Project name (omit for full graph)")
   end
 
   def execute(params, frame) do
-    projects = Manager.list()
+    Timeout.run(frame, 10_000, fn ->
+      projects = Manager.list()
 
-    graph =
-      Enum.reduce(projects, %{}, fn project, acc ->
-        deps = project.depends_on || []
+      graph =
+        Enum.reduce(projects, %{}, fn project, acc ->
+          deps = project.depends_on || []
 
-        dependents =
-          projects
-          |> Enum.filter(fn p -> project.name in (p.depends_on || []) end)
-          |> Enum.map(& &1.name)
+          dependents =
+            projects
+            |> Enum.filter(fn p -> project.name in (p.depends_on || []) end)
+            |> Enum.map(& &1.name)
 
-        Map.put(acc, project.name, %{depends_on: deps, depended_by: dependents})
-      end)
+          Map.put(acc, project.name, %{depends_on: deps, depended_by: dependents})
+        end)
 
-    result =
-      if params[:name] do
-        Map.get(graph, params.name, %{depends_on: [], depended_by: []})
-      else
-        graph
-      end
+      result =
+        if params[:name] do
+          Map.get(graph, params.name, %{depends_on: [], depended_by: []})
+        else
+          graph
+        end
 
-    {:reply, Response.tool() |> Response.json(result), frame}
+      {:reply, Response.tool() |> Response.json(result), frame}
+    end)
   end
 end

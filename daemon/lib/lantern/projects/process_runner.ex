@@ -98,10 +98,22 @@ defmodule Lantern.Projects.ProcessRunner do
     Logger.info("Process #{state.project.name} exited with code #{exit_code}")
 
     if state.status == :running and state.retry_count < @max_retries do
-      backoff = @base_backoff_ms * :math.pow(2, state.retry_count) |> round()
-      Logger.info("Retrying #{state.project.name} in #{backoff}ms (attempt #{state.retry_count + 1}/#{@max_retries})")
+      backoff = (@base_backoff_ms * :math.pow(2, state.retry_count)) |> round()
+
+      Logger.info(
+        "Retrying #{state.project.name} in #{backoff}ms (attempt #{state.retry_count + 1}/#{@max_retries})"
+      )
+
       Process.send_after(self(), :retry, backoff)
-      {:noreply, %{state | status: :starting, retry_count: state.retry_count + 1, port_ref: nil, os_pid: nil}}
+
+      {:noreply,
+       %{
+         state
+         | status: :starting,
+           retry_count: state.retry_count + 1,
+           port_ref: nil,
+           os_pid: nil
+       }}
     else
       broadcast_status(state.project.name, :error)
       {:noreply, %{state | status: :error, port_ref: nil, os_pid: nil}}
@@ -134,15 +146,17 @@ defmodule Lantern.Projects.ProcessRunner do
     else
       cwd = resolve_cwd(project)
       env = build_env(project)
+      {spawn_cmd, spawn_args} = spawn_program_and_args(cmd)
 
       try do
         port =
-          Port.open({:spawn, cmd}, [
+          Port.open({:spawn_executable, spawn_cmd}, [
             :binary,
             :exit_status,
             :stderr_to_stdout,
             {:cd, cwd},
-            {:env, env}
+            {:env, env},
+            {:args, spawn_args}
           ])
 
         # Get the OS PID from the port info
@@ -161,31 +175,60 @@ defmodule Lantern.Projects.ProcessRunner do
   defp resolve_cwd(%Project{path: path, run_cwd: cwd}), do: Path.join(path, cwd)
 
   defp build_env(%Project{run_env: run_env, port: port, domain: domain, name: name}) do
-    base = %{
+    lantern_env = %{
       "PORT" => to_string(port || ""),
       "DOMAIN" => domain || "",
       "PROJECT_NAME" => name
     }
 
-    Map.merge(base, run_env || %{})
+    # Inherit the system environment so processes keep DISPLAY, PATH, HOME, etc.
+    System.get_env()
+    |> inject_display_env()
+    |> Map.merge(lantern_env)
+    |> Map.merge(run_env || %{})
     |> Enum.map(fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
   end
 
-  defp do_stop(%{os_pid: nil} = state), do: %{state | status: :stopped}
+  # When running under systemd, graphical env vars (DISPLAY, XDG_RUNTIME_DIR) are
+  # absent, which causes headed browsers like Chrome to fail. Inject sensible
+  # defaults for the current user when they're missing.
+  defp inject_display_env(env) do
+    uid =
+      case System.cmd("id", ["-u"], stderr_to_stdout: true) do
+        {output, 0} -> String.trim(output)
+        _ -> "1000"
+      end
+
+    defaults = %{
+      "DISPLAY" => ":0",
+      "XDG_RUNTIME_DIR" => "/run/user/#{uid}"
+    }
+
+    Map.merge(defaults, env)
+  end
+
+  defp do_stop(%{os_pid: nil, port_ref: port_ref} = state) do
+    safe_close_port(port_ref)
+    %{state | status: :stopped, port_ref: nil}
+  end
 
   defp do_stop(%{os_pid: os_pid, port_ref: port_ref} = state) do
-    # Send SIGTERM
-    System.cmd("kill", ["-TERM", to_string(os_pid)], stderr_to_stdout: true)
+    # Kill the entire process group (negative PID) so child processes
+    # (Python, Chrome, etc.) are also terminated — not just the shell.
+    pgid = "-#{os_pid}"
+
+    _ = System.cmd("kill", ["-TERM", pgid], stderr_to_stdout: true)
 
     # Wait for graceful shutdown
     receive do
       {^port_ref, {:exit_status, _}} -> :ok
     after
       @shutdown_timeout_ms ->
-        # Force kill
-        System.cmd("kill", ["-KILL", to_string(os_pid)], stderr_to_stdout: true)
+        # Force kill entire process group.
+        _ = System.cmd("kill", ["-KILL", pgid], stderr_to_stdout: true)
     end
 
+    safe_close_port(port_ref)
     broadcast_status(state.project.name, :stopped)
     %{state | status: :stopped, port_ref: nil, os_pid: nil}
   rescue
@@ -228,5 +271,19 @@ defmodule Lantern.Projects.ProcessRunner do
 
   defp via(project_name) do
     {:via, Registry, {Lantern.ProcessRegistry, {:runner, project_name}}}
+  end
+
+  defp spawn_program_and_args(cmd) do
+    # Use setsid to create a new process group so we can kill the entire tree
+    # (shell + child processes like Python/Chrome) in do_stop/1.
+    {~c"/usr/bin/setsid", ["/bin/sh", "-lc", cmd]}
+  end
+
+  defp safe_close_port(nil), do: :ok
+
+  defp safe_close_port(port_ref) do
+    Port.close(port_ref)
+  rescue
+    _ -> :ok
   end
 end

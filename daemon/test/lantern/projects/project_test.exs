@@ -288,4 +288,43 @@ defmodule Lantern.Projects.ProjectTest do
       assert_raise ArgumentError, fn -> String.to_existing_atom(unknown_kind) end
     end
   end
+
+  describe "merged docs/endpoints" do
+    test "manual docs and endpoints take precedence over discovered entries" do
+      project =
+        Project.new(%{
+          name: "myapp",
+          path: "/tmp/myapp",
+          docs: [%{path: "README.md", kind: "readme"}],
+          discovered_docs: [
+            %{path: "README.md", kind: "markdown", source: "discovered"},
+            %{path: "docs/API.md", kind: "markdown", source: "discovered"}
+          ],
+          endpoints: [%{method: "GET", path: "/health", description: "Manual"}],
+          discovered_endpoints: [
+            %{method: "GET", path: "/health", description: "Discovered", source: "discovered"},
+            %{method: "POST", path: "/api/jobs", description: "Discovered", source: "discovered"}
+          ]
+        })
+
+      merged_docs = Project.merged_docs(project)
+      assert length(merged_docs) == 2
+      assert Enum.any?(merged_docs, fn d -> d.path == "README.md" and d.source == "manual" end)
+
+      assert Enum.any?(merged_docs, fn d ->
+               d.path == "docs/API.md" and d.source == "discovered"
+             end)
+
+      merged_endpoints = Project.merged_endpoints(project)
+      assert length(merged_endpoints) == 2
+
+      assert Enum.any?(merged_endpoints, fn ep ->
+               ep.method == "GET" and ep.path == "/health" and ep.source == "manual"
+             end)
+
+      assert Enum.any?(merged_endpoints, fn ep ->
+               ep.method == "POST" and ep.path == "/api/jobs" and ep.source == "discovered"
+             end)
+    end
+  end
 end

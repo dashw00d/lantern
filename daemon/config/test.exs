@@ -9,6 +9,8 @@ config :lantern, LanternWeb.Endpoint,
 
 # Disable self-registration during tests (no Caddy available)
 config :lantern, self_register: false
+config :lantern, discovery_worker_enabled: false
+config :lantern, shutdown_stop_services: false
 
 # Print only warnings and errors during test
 config :logger, level: :warning

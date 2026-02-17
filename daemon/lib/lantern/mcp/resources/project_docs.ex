@@ -64,8 +64,8 @@ defmodule Lantern.MCP.Resources.ProjectDocs do
     |> Enum.filter(fn d -> d.exists end)
     |> Enum.map(fn doc ->
       case DocServer.read(project, doc.path) do
-        {:ok, text} -> %{path: doc.path, kind: doc.kind, content: text}
-        _ -> %{path: doc.path, kind: doc.kind, content: "(unreadable)"}
+        {:ok, text} -> %{path: doc.path, kind: doc.kind, source: doc.source, content: text}
+        _ -> %{path: doc.path, kind: doc.kind, source: doc.source, content: "(unreadable)"}
       end
     end)
   end

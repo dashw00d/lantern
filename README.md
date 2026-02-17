@@ -1,34 +1,68 @@
-# Lantern — Local Dev Environment Manager for Linux
+# Lantern — Infrastructure Layer for Agent Orchestration
 
-**The [Laravel Valet](https://laravel.com/docs/valet) / [Laravel Herd](https://herd.laravel.com) experience, on Linux.** A local development environment manager that gives every project its own HTTPS domain — no more `localhost:3000`.
+You've got 6 MCP servers, a custom agent loop, 15 local services, and a rats nest of configs trying to glue it all together.
 
-Lantern auto-detects your projects (Laravel, Next.js, Vite, FastAPI, Django, PHP, static sites, anything), wires up TLS certificates, a reverse proxy, DNS, and shared services — then gets out of your way. Manage everything from the CLI, system tray, or a full desktop GUI.
+The orchestration problem isn't the AI — it's the infrastructure underneath it.
 
-> **If you've ever wished Valet or Herd existed for Linux, this is it.**
+**Lantern manages every local service and exposes one MCP server so your agent can discover every tool, read every API, and chain them together.**
 
 <!-- TODO: Add demo video/gif here -->
 
-## Why Lantern?
+## The Problem
 
-| Pain | Lantern |
-|------|---------|
-| Juggling `localhost:3000`, `:3001`, `:8080`... | Every project gets `https://myapp.glow` |
-| Manually editing `/etc/hosts` or nginx configs | Zero-config — drop a project in `~/sites`, done |
-| No Valet/Herd on Linux | Built for Linux from the ground up |
-| `mkcert` + nginx + manual plumbing for local HTTPS | Automatic trusted TLS certificates via Caddy |
-| CLI-only tools with no GUI | Desktop app, system tray, **and** CLI |
-| PHP-only tools (MAMP, XAMPP, Herd) | Framework-agnostic: PHP, Node, Python, static, anything |
+You're building agent workflows that need to hit multiple tools in sequence. But every tool is its own island — different port, different config, different MCP server, no shared context. Your agent can write code but can't see what's actually running on your machine.
+
+Meanwhile:
+
+- 15 dev servers on random ports you can't remember
+- Daemons crashing silently in the background
+- Every tool siloed with no way to chain operations
+- A new config file for every MCP integration
+
+## What Lantern Does
+
+Lantern is one daemon that manages your entire local dev environment and gives agents a single point of access to all of it.
+
+| Without Lantern | With Lantern |
+|-----------------|-------------|
+| `localhost:3000`, `:3001`, `:8080`, `:5173`... | Every service gets `https://myapp.glow` |
+| Services crash and you find out 20 minutes later | Managed lifecycle with health checks |
+| One MCP config per tool, manually wired | One MCP endpoint — every tool, doc, and API |
+| Agent can't discover what's running | Agent lists tools, reads docs, calls APIs |
+| Multi-tool operations require glue scripts | One prompt, three tools, zero config |
+
+## One MCP Server. Every Tool.
+
+Lantern isn't just a proxy manager. It's the **runtime + context layer** your agents are missing.
+
+- **Discover** — agent calls `list_tools` and sees every registered tool with descriptions and endpoints
+- **Understand** — agent reads docs and API schemas for any tool on demand
+- **Use** — agent calls tool APIs directly through Lantern's routing
+- **Chain** — multi-tool operations in a single prompt, no glue code
+
+> "Check the browser for the latest deployment status, cross-reference with the database logs, and restart the failing service."
+>
+> One prompt. Three tools. Zero config.
+
+Use Lantern as:
+
+- a **single MCP server** so agent clients don't need per-tool setup
+- the **infrastructure substrate** inside a larger orchestration framework
+- a replacement for fragmented per-tool integrations and config sprawl
 
 ## Features
 
-- **Automatic project detection** — drop a project in `~/sites` and Lantern detects the framework (Laravel, Symfony, Next.js, Nuxt, Remix, Vite, FastAPI, Django, Flask, PHP, static HTML)
-- **Custom local domains with HTTPS** — every project gets `project-name.glow` with a trusted TLS certificate, powered by Caddy's automatic SSL
-- **Framework-agnostic** — works with any stack that runs a dev server or serves files. Not just PHP.
-- **Dev server management** — automatically starts your dev server (`next dev`, `vite`, `uvicorn`, etc.) with allocated ports
+- **Manifest-first scanning** — `lantern scan` only imports folders with `lantern.yaml`/`lantern.yml`, keeping the registry clean and explicit
+- **Custom local domains with HTTPS** — every project gets `project-name.glow` with a trusted TLS certificate, powered by Caddy
+- **Framework-agnostic** — works with any stack that runs a dev server or serves files
+- **Managed runtime lifecycle** — start/stop/restart with readiness checks and process teardown
+- **Runtime command overrides** — optional `deploy.start/stop/restart/logs/status` can override default runtime behavior
+- **Port conflict guardrails** — proxy `run_cmd` must use `${PORT}` unless you configure a fixed `upstream_url`/runtime override
 - **Shared services** — Mailpit (email testing), Redis, and PostgreSQL as toggleable services
 - **System tray** — start/stop projects and services from the tray without opening anything
-- **Desktop GUI** — full dashboard with real-time status, logs, and settings
+- **Desktop GUI** — full dashboard with real-time status, logs, settings, and one-click shutdown
 - **CLI** — `lantern scan`, `lantern on myapp`, `lantern status` — everything scriptable
+- **MCP-native** — all project/tool context over MCP at `/mcp`, bootstrap clients with `lantern mcp install`
 - **Runs as a systemd daemon** — always on, survives reboots, zero overhead when idle
 - **Package manager detection** — automatically uses npm, pnpm, yarn, or bun based on your lockfile
 
@@ -46,6 +80,9 @@ lantern on myapp
 
 # Visit it
 open https://myapp.glow
+
+# Give your agent access
+lantern mcp install claude
 ```
 
 Or build from source:
@@ -68,6 +105,14 @@ lantern on myapp   →   allocates port           →  starts dev server
                        ✓ https://myapp.glow ready
 ```
 
+```
+ Agent                  Lantern MCP                 Your Tools
+───────                ─────────────               ────────────
+list_tools          →  returns all tools         →  browser, db, cache...
+get_endpoints       →  returns API schema        →  POST /browse, GET /query...
+call_tool_api       →  proxies request           →  tool responds with data
+```
+
 Lantern runs a lightweight daemon (Elixir/Phoenix) that orchestrates:
 
 | Component | Role |
@@ -75,12 +120,21 @@ Lantern runs a lightweight daemon (Elixir/Phoenix) that orchestrates:
 | **Caddy** | Reverse proxy + automatic local TLS certificates |
 | **dnsmasq** | Local `.glow` wildcard DNS resolution to 127.0.0.1 |
 | **Process supervisor** | Starts/stops dev servers with automatic port allocation |
+| **MCP server** | Single endpoint for agent discovery and tool invocation |
 
 The CLI, desktop app, and system tray are all thin clients that talk to the daemon REST API on port `4777`.
 
-## Supported Frameworks
+## Runtime Model
 
-Lantern auto-detects these out of the box — no configuration needed:
+Lantern uses one local runtime model for all projects:
+
+- **Default:** `run.cmd` + allocated `${PORT}`
+- **Fixed upstream services:** set `upstream_url` (for already-running systemd/tmux/docker services)
+- **Optional runtime overrides:** use `deploy.start/stop/...` commands when you need custom control
+
+When a project has a local process command, Lantern verifies it actually binds to the expected port before marking it as running.
+
+## Supported Frameworks
 
 | Framework | Type | How it's served |
 |-----------|------|-----------------|
@@ -96,21 +150,7 @@ Lantern auto-detects these out of the box — no configuration needed:
 | **Flask** | Python | Reverse proxy to `flask run` |
 | **Static HTML** | Static | Caddy file server |
 
-Need something else? Add a `lantern.yml` to any project to configure it manually.
-
-## Compared To
-
-| Feature | Lantern | Valet | Herd | XAMPP/MAMP |
-|---------|---------|-------|------|------------|
-| **Platform** | Linux | macOS | macOS/Windows | All |
-| **Frameworks** | Any | PHP-first | PHP-first | PHP only |
-| **Local HTTPS** | Automatic | Automatic | Automatic | Manual |
-| **GUI** | Desktop + Tray | No | Yes | Yes |
-| **CLI** | Yes | Yes | Yes | No |
-| **Dev server management** | Yes | No | No | No |
-| **Service management** | Yes | Partial | Yes | Yes |
-| **Config required** | Zero | Minimal | Minimal | Significant |
-| **Open source** | Yes | Yes | No | Partial |
+Need something else? Add a `lantern.yml` or `lantern.yaml` to any project.
 
 ## Architecture
 
@@ -176,6 +216,14 @@ Run the daemon and desktop app separately for development:
 
 ```bash
 sudo bash setup-dev.sh    # configures sudoers, Caddy, DNS
+```
+
+**Fast dev loop (no reinstall needed):**
+
+```bash
+bash dev-up.sh            # stops packaged runtime + starts source daemon
+# Ctrl+C to stop daemon
+bash dev-down.sh          # optional cleanup
 ```
 
 **Daemon:**
