@@ -1,0 +1,81 @@
+id: lantern
+name: Lantern
+kind: service
+description: Local tool orchestration daemon — service discovery, reverse proxy (.glow domains), process management, and API documentation for all tools in the workspace
+
+type: self
+domain: lantern.glow
+run:
+  cmd: bash dev-up.sh
+  cwd: .
+
+tags:
+  - orchestration
+  - proxy
+  - service-discovery
+  - process-management
+
+health_endpoint: /api/health
+
+docs:
+  - daemon/README.md
+
+endpoints:
+  - method: GET
+    path: /api/health
+    description: Health check
+    category: System
+    risk: low
+
+  - method: GET
+    path: /api/projects
+    description: List all discovered projects/tools from workspace roots
+    category: Discovery
+    risk: low
+
+  - method: GET
+    path: /api/projects/:id
+    description: Get project details including lantern.yaml config
+    category: Discovery
+    risk: low
+
+  - method: GET
+    path: /api/projects/:id/docs
+    description: Get auto-discovered documentation for a project
+    category: Docs
+    risk: low
+
+  - method: GET
+    path: /api/projects/:id/api
+    description: Get auto-discovered API endpoints for a project
+    category: Docs
+    risk: low
+
+  - method: POST
+    path: /api/projects/:id/start
+    description: Start a managed service
+    category: Process
+    risk: medium
+
+  - method: POST
+    path: /api/projects/:id/stop
+    description: Stop a managed service
+    category: Process
+    risk: medium
+
+  - method: GET
+    path: /api/projects/:id/status
+    description: Get service runtime status (running, port, pid)
+    category: Process
+    risk: low
+
+routing:
+  triggers:
+    - lantern
+    - tools
+    - services
+    - projects
+    - start service
+    - stop service
+  risk: low
+  requires_confirmation: false
