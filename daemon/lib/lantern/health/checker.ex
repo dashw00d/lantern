@@ -86,6 +86,10 @@ defmodule Lantern.Health.Checker do
       projects
       |> Enum.filter(&checkable?/1)
 
+    # Prune stale results for projects that no longer exist
+    known_names = MapSet.new(projects, & &1.name)
+    pruned_results = Map.filter(state.results, fn {name, _} -> MapSet.member?(known_names, name) end)
+
     new_results =
       checkable
       |> Task.async_stream(
@@ -96,7 +100,7 @@ defmodule Lantern.Health.Checker do
         timeout: @check_timeout + 1_000,
         on_timeout: :kill_task
       )
-      |> Enum.reduce(state.results, fn
+      |> Enum.reduce(pruned_results, fn
         {:ok, {name, result}}, acc ->
           update_result(acc, name, result)
 
