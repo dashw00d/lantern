@@ -8,6 +8,9 @@ config :lantern, LanternWeb.Endpoint,
   server: false
 
 # Disable self-registration during tests (no Caddy available)
+# Use isolated state directory so tests don't corrupt dev/prod state.json
+config :lantern, state_dir: Path.join(System.tmp_dir!(), "lantern-test-#{System.pid()}")
+
 config :lantern, self_register: false
 config :lantern, discovery_worker_enabled: false
 config :lantern, shutdown_stop_services: false
