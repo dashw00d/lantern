@@ -86,9 +86,9 @@ defmodule Lantern.Health.Checker do
       projects
       |> Enum.filter(&checkable?/1)
 
-    # Prune stale results for projects that no longer exist
-    known_names = MapSet.new(projects, & &1.name)
-    pruned_results = Map.filter(state.results, fn {name, _} -> MapSet.member?(known_names, name) end)
+    # Prune stale results for projects that no longer exist or are not checkable
+    checkable_names = MapSet.new(checkable, & &1.name)
+    pruned_results = Map.filter(state.results, fn {name, _} -> MapSet.member?(checkable_names, name) end)
 
     new_results =
       checkable
