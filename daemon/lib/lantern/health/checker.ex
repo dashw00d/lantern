@@ -112,14 +112,20 @@ defmodule Lantern.Health.Checker do
 
   # Private helpers
 
-  defp checkable?(%{base_url: base_url, health_endpoint: endpoint, enabled: enabled})
-       when is_binary(base_url) and is_binary(endpoint) and enabled == true,
-       do: true
+  defp checkable?(%{health_endpoint: endpoint, enabled: enabled} = project)
+       when is_binary(endpoint) and enabled == true do
+    is_binary(check_base_url(project))
+  end
 
   defp checkable?(_), do: false
 
+  defp check_base_url(%{base_url: base_url}) when is_binary(base_url), do: base_url
+  defp check_base_url(%{upstream_url: upstream_url}) when is_binary(upstream_url), do: upstream_url
+  defp check_base_url(_), do: nil
+
   defp perform_check(project) do
-    url = String.trim_trailing(project.base_url, "/") <> project.health_endpoint
+    base = check_base_url(project)
+    url = String.trim_trailing(base, "/") <> project.health_endpoint
     start_time = System.monotonic_time(:millisecond)
 
     try do
