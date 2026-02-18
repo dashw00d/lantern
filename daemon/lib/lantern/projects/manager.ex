@@ -504,7 +504,7 @@ defmodule Lantern.Projects.Manager do
   defp do_activate(%Project{type: :proxy} = project) do
     with {:ok, port} <- PortAllocator.allocate(project.name) do
       project = %{project | port: port, status: :starting}
-      project = maybe_compute_base_url(project)
+      project = Project.with_computed_base_url(project)
 
       with :ok <- validate_runtime_port_strategy(project),
            :ok <- ensure_caddy_config(project),
@@ -664,29 +664,6 @@ defmodule Lantern.Projects.Manager do
 
   defp maybe_release_port(%Project{type: :proxy, name: name}), do: PortAllocator.release(name)
   defp maybe_release_port(_project), do: :ok
-
-  # When base_url is not explicitly configured, derive it from the assigned port.
-  # This allows tools to use ${PORT} for dynamic port assignment and have
-  # service discovery return the correct URL automatically.
-  defp maybe_compute_base_url(%Project{base_url: nil, port: port} = project)
-       when is_integer(port) do
-    %{project | base_url: "http://127.0.0.1:#{port}"}
-  end
-
-  # When base_url is a localhost URL pointing to a stale port, update it to
-  # match the newly allocated port. This handles the case where a service is
-  # restarted and gets a different port — without this, health checks hit the
-  # old dead port. External URLs (e.g. https://ghost.paidfor.net) are left alone.
-  defp maybe_compute_base_url(%Project{base_url: base_url, port: port} = project)
-       when is_integer(port) do
-    if Regex.match?(~r/^http:\/\/127\.0\.0\.1:\d+/, base_url) do
-      %{project | base_url: "http://127.0.0.1:#{port}"}
-    else
-      project
-    end
-  end
-
-  defp maybe_compute_base_url(project), do: project
 
   @updatable_fields [
     :type,
