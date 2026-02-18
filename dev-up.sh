@@ -61,6 +61,18 @@ stop_packaged_runtime() {
   ok "Packaged runtime stopped (if it was running)"
 }
 
+graceful_shutdown_lantern() {
+  # If Lantern is running, ask it to gracefully stop all managed projects
+  # before we kill the process. This prevents orphan child processes (uvicorn, etc.)
+  # from surviving the restart.
+  if curl -sf http://127.0.0.1:4777/api/health >/dev/null 2>&1; then
+    info "Gracefully stopping managed projects..."
+    curl -sf -X POST http://127.0.0.1:4777/api/system/shutdown >/dev/null 2>&1 || true
+    sleep 1
+    ok "Managed projects stopped"
+  fi
+}
+
 free_daemon_port() {
   local pids
   pids="$(lsof -tiTCP:4777 -sTCP:LISTEN 2>/dev/null || true)"
@@ -93,6 +105,7 @@ fi
 command -v mix >/dev/null 2>&1 || die "mix not found. Install Elixir and Erlang first."
 
 ensure_caddy_mode
+graceful_shutdown_lantern
 stop_packaged_runtime
 free_daemon_port
 
