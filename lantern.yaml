@@ -5,6 +5,8 @@ description: Local tool orchestration daemon — service discovery, reverse prox
 
 type: self
 domain: lantern.glow
+upstream_url: http://127.0.0.1:4777
+health_endpoint: /api/system/health
 run:
   cmd: bash dev-up.sh
   cwd: .
@@ -14,8 +16,6 @@ tags:
   - proxy
   - service-discovery
   - process-management
-
-health_endpoint: /api/health
 
 docs:
   - daemon/README.md

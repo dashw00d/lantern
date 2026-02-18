@@ -44,15 +44,20 @@ defmodule Lantern.Config.Settings do
 
     settings_path = Path.join(state_dir, "settings.json")
 
+    # App env values from runtime.exs that should NOT be overridden by persisted file
+    app_env_overrides = %{
+      workspace_roots:
+        Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")]),
+      tld: Application.get_env(:lantern, :tld, ".glow")
+    }
+
     settings =
       @default_settings
       |> Map.put(:state_dir, state_dir)
-      |> Map.put(
-        :workspace_roots,
-        Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")])
-      )
-      |> Map.put(:tld, Application.get_env(:lantern, :tld, ".glow"))
+      |> Map.merge(app_env_overrides)
       |> merge_from_file(settings_path)
+      # Re-apply app env overrides so runtime.exs always wins over stale file values
+      |> Map.merge(app_env_overrides)
 
     {:ok, %{settings: settings, path: settings_path}}
   end
