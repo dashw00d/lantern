@@ -128,15 +128,30 @@ defmodule Lantern.Projects.Manager do
     projects = load_projects()
     # Scan workspace roots shortly after boot (delay lets Finch etc. start first)
     Process.send_after(self(), :initial_scan, 500)
-    {:ok, %{projects: projects}}
+
+    {:ok,
+     %{
+       projects: projects,
+       scan_task: nil,
+       scan_caller: nil,
+       refresh_task: nil,
+       refresh_caller: nil
+     }}
   end
 
   @impl true
-  def handle_call(:scan, _from, state) do
-    new_projects = do_scan(state.projects)
-    persist_projects(new_projects)
-    broadcast_projects_changed(new_projects)
-    {:reply, {:ok, Map.values(new_projects)}, %{state | projects: new_projects}}
+  def handle_call(:scan, _from, %{scan_task: %Task{}} = state) do
+    {:reply, {:error, :scan_in_progress}, state}
+  end
+
+  @impl true
+  def handle_call(:scan, from, state) do
+    task =
+      Task.Supervisor.async_nolink(Lantern.TaskSupervisor, fn ->
+        {:scan, do_scan(state.projects)}
+      end)
+
+    {:noreply, %{state | scan_task: task, scan_caller: from}}
   end
 
   @impl true
@@ -285,15 +300,23 @@ defmodule Lantern.Projects.Manager do
   end
 
   @impl true
-  def handle_call({:refresh_discovery, :all}, _from, state) do
-    refreshed =
-      state.projects
-      |> Enum.map(fn {name, project} -> {name, Discovery.enrich(project)} end)
-      |> Map.new()
+  def handle_call({:refresh_discovery, :all}, _from, %{refresh_task: %Task{}} = state) do
+    {:reply, {:error, :refresh_in_progress}, state}
+  end
 
-    persist_projects(refreshed)
-    broadcast_projects_changed(refreshed)
-    {:reply, {:ok, Map.values(refreshed)}, %{state | projects: refreshed}}
+  @impl true
+  def handle_call({:refresh_discovery, :all}, from, state) do
+    task =
+      Task.Supervisor.async_nolink(Lantern.TaskSupervisor, fn ->
+        refreshed =
+          state.projects
+          |> Enum.map(fn {name, project} -> {name, Discovery.enrich(project)} end)
+          |> Map.new()
+
+        {:refresh_all, refreshed}
+      end)
+
+    {:noreply, %{state | refresh_task: task, refresh_caller: from}}
   end
 
   @impl true
@@ -392,8 +415,18 @@ defmodule Lantern.Projects.Manager do
   def handle_info(:initial_scan, state) do
     Logger.info("Running initial project scan...")
 
-    scanned_projects = do_scan(state.projects)
+    server = self()
 
+    Task.Supervisor.start_child(Lantern.TaskSupervisor, fn ->
+      scanned_projects = do_scan(state.projects)
+      send(server, {:initial_scan_complete, scanned_projects})
+    end)
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:initial_scan_complete, scanned_projects}, state) do
     persist_projects(scanned_projects)
     broadcast_projects_changed(scanned_projects)
     Logger.info("Initial scan found #{map_size(scanned_projects)} project(s)")
@@ -411,6 +444,47 @@ defmodule Lantern.Projects.Manager do
     end
 
     {:noreply, %{state | projects: scanned_projects}}
+  end
+
+  @impl true
+  def handle_info({ref, {:scan, new_projects}}, %{scan_task: %Task{ref: ref}} = state) do
+    Process.demonitor(ref, [:flush])
+
+    persist_projects(new_projects)
+    broadcast_projects_changed(new_projects)
+    if state.scan_caller, do: GenServer.reply(state.scan_caller, {:ok, Map.values(new_projects)})
+
+    {:noreply, %{state | projects: new_projects, scan_task: nil, scan_caller: nil}}
+  end
+
+  @impl true
+  def handle_info({ref, {:refresh_all, refreshed}}, %{refresh_task: %Task{ref: ref}} = state) do
+    Process.demonitor(ref, [:flush])
+
+    persist_projects(refreshed)
+    broadcast_projects_changed(refreshed)
+
+    if state.refresh_caller,
+      do: GenServer.reply(state.refresh_caller, {:ok, Map.values(refreshed)})
+
+    {:noreply, %{state | projects: refreshed, refresh_task: nil, refresh_caller: nil}}
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{scan_task: %Task{ref: ref}} = state) do
+    if state.scan_caller, do: GenServer.reply(state.scan_caller, {:error, reason})
+    {:noreply, %{state | scan_task: nil, scan_caller: nil}}
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{refresh_task: %Task{ref: ref}} = state) do
+    if state.refresh_caller, do: GenServer.reply(state.refresh_caller, {:error, reason})
+    {:noreply, %{state | refresh_task: nil, refresh_caller: nil}}
+  end
+
+  @impl true
+  def handle_info(_msg, state) do
+    {:noreply, state}
   end
 
   # Private helpers
@@ -551,7 +625,10 @@ defmodule Lantern.Projects.Manager do
       :ok
     else
       {:error, reason} ->
-        Logger.warning("Caddy config failed for #{project.name}: #{reason} (continuing without reverse proxy)")
+        Logger.warning(
+          "Caddy config failed for #{project.name}: #{reason} (continuing without reverse proxy)"
+        )
+
         :ok
     end
   end
