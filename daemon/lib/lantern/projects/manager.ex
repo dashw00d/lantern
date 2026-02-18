@@ -420,12 +420,27 @@ defmodule Lantern.Projects.Manager do
 
     discovered_projects =
       Enum.reduce(paths, %{}, fn path, acc ->
-        name = Path.basename(path)
+        dir_name = Path.basename(path)
+        project = Detector.detect(path)
+
+        # Use the yaml id as the canonical key when it matches an existing
+        # project (avoids duplicates when directory name differs in case
+        # from a registered id, e.g. "Lantern" dir vs "lantern" self-reg).
+        yaml_id =
+          case project do
+            %Project{id: id} when is_binary(id) and id != "" -> id
+            _ -> nil
+          end
+
+        name =
+          cond do
+            yaml_id != nil and Map.has_key?(existing_projects, yaml_id) -> yaml_id
+            true -> dir_name
+          end
 
         case Map.get(existing_projects, name) do
           nil ->
-            project = path |> Detector.detect() |> Discovery.enrich()
-            Map.put(acc, name, project)
+            Map.put(acc, name, Discovery.enrich(project))
 
           existing ->
             updated =
@@ -656,6 +671,19 @@ defmodule Lantern.Projects.Manager do
   defp maybe_compute_base_url(%Project{base_url: nil, port: port} = project)
        when is_integer(port) do
     %{project | base_url: "http://127.0.0.1:#{port}"}
+  end
+
+  # When base_url is a localhost URL pointing to a stale port, update it to
+  # match the newly allocated port. This handles the case where a service is
+  # restarted and gets a different port — without this, health checks hit the
+  # old dead port. External URLs (e.g. https://ghost.paidfor.net) are left alone.
+  defp maybe_compute_base_url(%Project{base_url: base_url, port: port} = project)
+       when is_integer(port) do
+    if Regex.match?(~r/^http:\/\/127\.0\.0\.1:\d+/, base_url) do
+      %{project | base_url: "http://127.0.0.1:#{port}"}
+    else
+      project
+    end
   end
 
   defp maybe_compute_base_url(project), do: project
