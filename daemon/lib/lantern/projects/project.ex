@@ -438,6 +438,33 @@ defmodule Lantern.Projects.Project do
     {method, path}
   end
 
+  @doc """
+  Derive or update `base_url` from the project's assigned port.
+
+  Rules:
+  - If `base_url` is nil and a port is set, derive `http://127.0.0.1:{port}`.
+  - If `base_url` is a localhost URL (`http://127.0.0.1:*`) but the port has
+    changed (e.g. after a restart), update it to match the new port. This
+    prevents stale health checks hitting dead ports.
+  - External URLs (e.g. `https://ghost.paidfor.net`) are left unchanged.
+  - If no port is set, the project is returned unchanged.
+  """
+  def with_computed_base_url(%__MODULE__{base_url: nil, port: port} = project)
+      when is_integer(port) do
+    %{project | base_url: "http://127.0.0.1:#{port}"}
+  end
+
+  def with_computed_base_url(%__MODULE__{base_url: base_url, port: port} = project)
+      when is_integer(port) do
+    if Regex.match?(~r/^http:\/\/127\.0\.0\.1:\d+/, base_url) do
+      %{project | base_url: "http://127.0.0.1:#{port}"}
+    else
+      project
+    end
+  end
+
+  def with_computed_base_url(project), do: project
+
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 

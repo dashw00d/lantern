@@ -74,21 +74,21 @@ defmodule Lantern.Projects.Manager do
   Returns a single project by name.
   """
   def get(name) do
-    GenServer.call(__MODULE__, {:get, name})
+    GenServer.call(__MODULE__, {:get, name}, 30_000)
   end
 
   @doc """
   Returns a single project by ID, falling back to name lookup.
   """
   def get_by_id(id) do
-    GenServer.call(__MODULE__, {:get_by_id, id})
+    GenServer.call(__MODULE__, {:get_by_id, id}, 30_000)
   end
 
   @doc """
   Returns all projects.
   """
   def list do
-    GenServer.call(__MODULE__, :list)
+    GenServer.call(__MODULE__, :list, 30_000)
   end
 
   @doc """
@@ -128,43 +128,33 @@ defmodule Lantern.Projects.Manager do
     projects = load_projects()
     # Scan workspace roots shortly after boot (delay lets Finch etc. start first)
     Process.send_after(self(), :initial_scan, 500)
-    {:ok, %{projects: projects}}
+
+    {:ok,
+     %{
+       projects: projects,
+       projects_revision: 0,
+       scan_task: nil,
+       scan_caller: nil,
+       scan_revision: nil,
+       refresh_task: nil,
+       refresh_caller: nil,
+       refresh_revision: nil
+     }}
   end
 
   @impl true
-  def handle_call(:scan, _from, state) do
-    paths = Scanner.scan()
+  def handle_call(:scan, _from, %{scan_task: %Task{}} = state) do
+    {:reply, {:error, :scan_in_progress}, state}
+  end
 
-    discovered_projects =
-      Enum.reduce(paths, %{}, fn path, acc ->
-        name = Path.basename(path)
+  @impl true
+  def handle_call(:scan, from, state) do
+    next_state =
+      state
+      |> Map.put(:scan_caller, from)
+      |> launch_scan_task()
 
-        case Map.get(state.projects, name) do
-          nil ->
-            # New project - detect it
-            project = path |> Detector.detect() |> Discovery.enrich()
-            Map.put(acc, name, project)
-
-          existing ->
-            # Keep existing project data, update path if it moved
-            updated =
-              existing
-              |> then(fn project ->
-                if project.path != path, do: %{project | path: path}, else: project
-              end)
-              |> Discovery.enrich()
-
-            Map.put(acc, name, updated)
-        end
-      end)
-
-    preserved_projects = preserve_registered_projects(state.projects, discovered_projects)
-
-    new_projects = Map.merge(discovered_projects, preserved_projects)
-
-    persist_projects(new_projects)
-    broadcast_projects_changed(new_projects)
-    {:reply, {:ok, Map.values(new_projects)}, %{state | projects: new_projects}}
+    {:noreply, next_state}
   end
 
   @impl true
@@ -183,7 +173,7 @@ defmodule Lantern.Projects.Manager do
             persist_projects(new_projects)
             broadcast_project_updated(updated_project)
             broadcast_projects_changed(new_projects)
-            {:reply, {:ok, updated_project}, %{state | projects: new_projects}}
+            {:reply, {:ok, updated_project}, put_projects(state, new_projects)}
 
           {:error, reason} ->
             {:reply, {:error, reason}, state}
@@ -203,7 +193,7 @@ defmodule Lantern.Projects.Manager do
         persist_projects(new_projects)
         broadcast_project_updated(updated_project)
         broadcast_projects_changed(new_projects)
-        {:reply, {:ok, updated_project}, %{state | projects: new_projects}}
+        {:reply, {:ok, updated_project}, put_projects(state, new_projects)}
     end
   end
 
@@ -225,7 +215,7 @@ defmodule Lantern.Projects.Manager do
     persist_projects(new_projects)
     Enum.each(changed_projects, &broadcast_project_updated/1)
     broadcast_projects_changed(new_projects)
-    {:reply, {:ok, Map.values(new_projects)}, %{state | projects: new_projects}}
+    {:reply, {:ok, Map.values(new_projects)}, put_projects(state, new_projects)}
   end
 
   @impl true
@@ -246,7 +236,7 @@ defmodule Lantern.Projects.Manager do
             persist_projects(new_projects)
             broadcast_project_updated(updated_project)
             broadcast_projects_changed(new_projects)
-            {:reply, {:ok, updated_project}, %{state | projects: new_projects}}
+            {:reply, {:ok, updated_project}, put_projects(state, new_projects)}
 
           {:error, reason} ->
             {:reply, {:error, reason}, state}
@@ -280,7 +270,7 @@ defmodule Lantern.Projects.Manager do
           persist_projects(new_projects)
           broadcast_project_updated(final_project)
           broadcast_projects_changed(new_projects)
-          {:reply, {:ok, final_project}, %{state | projects: new_projects}}
+          {:reply, {:ok, final_project}, put_projects(state, new_projects)}
         else
           {:error, reason} ->
             {:reply, {:error, reason}, state}
@@ -313,15 +303,18 @@ defmodule Lantern.Projects.Manager do
   end
 
   @impl true
-  def handle_call({:refresh_discovery, :all}, _from, state) do
-    refreshed =
-      state.projects
-      |> Enum.map(fn {name, project} -> {name, Discovery.enrich(project)} end)
-      |> Map.new()
+  def handle_call({:refresh_discovery, :all}, _from, %{refresh_task: %Task{}} = state) do
+    {:reply, {:error, :refresh_in_progress}, state}
+  end
 
-    persist_projects(refreshed)
-    broadcast_projects_changed(refreshed)
-    {:reply, {:ok, Map.values(refreshed)}, %{state | projects: refreshed}}
+  @impl true
+  def handle_call({:refresh_discovery, :all}, from, state) do
+    next_state =
+      state
+      |> Map.put(:refresh_caller, from)
+      |> launch_refresh_task()
+
+    {:noreply, next_state}
   end
 
   @impl true
@@ -336,7 +329,7 @@ defmodule Lantern.Projects.Manager do
         persist_projects(new_projects)
         broadcast_project_updated(refreshed_project)
         broadcast_projects_changed(new_projects)
-        {:reply, {:ok, refreshed_project}, %{state | projects: new_projects}}
+        {:reply, {:ok, refreshed_project}, put_projects(state, new_projects)}
     end
   end
 
@@ -352,7 +345,7 @@ defmodule Lantern.Projects.Manager do
           persist_projects(new_projects)
           broadcast_project_updated(valid_project)
           broadcast_projects_changed(new_projects)
-          {:reply, {:ok, valid_project}, %{state | projects: new_projects}}
+          {:reply, {:ok, valid_project}, put_projects(state, new_projects)}
 
         {:error, reasons} ->
           {:reply, {:error, {:validation, reasons}}, state}
@@ -386,7 +379,7 @@ defmodule Lantern.Projects.Manager do
                 persist_projects(new_projects)
                 broadcast_project_updated(valid_project)
                 broadcast_projects_changed(new_projects)
-                {:reply, {:ok, valid_project}, %{state | projects: new_projects}}
+                {:reply, {:ok, valid_project}, put_projects(state, new_projects)}
 
               {:error, reasons} ->
                 {:reply, {:error, {:validation, reasons}}, state}
@@ -412,23 +405,172 @@ defmodule Lantern.Projects.Manager do
         new_projects = Map.delete(state.projects, name)
         persist_projects(new_projects)
         broadcast_projects_changed(new_projects)
-        {:reply, :ok, %{state | projects: new_projects}}
+        {:reply, :ok, put_projects(state, new_projects)}
     end
   end
 
   @impl true
   def handle_info(:initial_scan, state) do
     Logger.info("Running initial project scan...")
+
+    _ = launch_initial_scan(state)
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:initial_scan_complete, scan_revision, scanned_projects}, state) do
+    if scan_revision == state.projects_revision do
+      persist_projects(scanned_projects)
+      broadcast_projects_changed(scanned_projects)
+      Logger.info("Initial scan found #{map_size(scanned_projects)} project(s)")
+
+      # Auto-activate in a background task so we don't block the GenServer
+      activatable_names =
+        scanned_projects
+        |> Enum.filter(fn {_name, p} -> p.enabled && activatable?(p) && p.status != :running end)
+        |> Enum.map(fn {name, _p} -> name end)
+
+      if activatable_names != [] do
+        Task.Supervisor.start_child(Lantern.TaskSupervisor, fn ->
+          auto_activate_projects(activatable_names)
+        end)
+      end
+
+      {:noreply, put_projects(state, scanned_projects)}
+    else
+      Logger.debug(
+        "Initial scan state changed while scanning; retrying with latest project state"
+      )
+
+      _ = launch_initial_scan(state)
+      {:noreply, state}
+    end
+  end
+
+  @impl true
+  def handle_info({ref, {:scan, new_projects}}, %{scan_task: %Task{ref: ref}} = state) do
+    Process.demonitor(ref, [:flush])
+
+    if state.scan_revision == state.projects_revision do
+      persist_projects(new_projects)
+      broadcast_projects_changed(new_projects)
+
+      if state.scan_caller,
+        do: GenServer.reply(state.scan_caller, {:ok, Map.values(new_projects)})
+
+      {:noreply, state |> put_projects(new_projects) |> clear_scan_task()}
+    else
+      Logger.debug("Project state changed during scan; retrying scan with latest state")
+      {:noreply, launch_scan_task(state)}
+    end
+  end
+
+  @impl true
+  def handle_info({ref, {:refresh_all, refreshed}}, %{refresh_task: %Task{ref: ref}} = state) do
+    Process.demonitor(ref, [:flush])
+
+    if state.refresh_revision == state.projects_revision do
+      persist_projects(refreshed)
+      broadcast_projects_changed(refreshed)
+
+      if state.refresh_caller,
+        do: GenServer.reply(state.refresh_caller, {:ok, Map.values(refreshed)})
+
+      {:noreply, state |> put_projects(refreshed) |> clear_refresh_task()}
+    else
+      Logger.debug("Project state changed during discovery refresh; retrying with latest state")
+      {:noreply, launch_refresh_task(state)}
+    end
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{scan_task: %Task{ref: ref}} = state) do
+    if state.scan_caller, do: GenServer.reply(state.scan_caller, {:error, reason})
+    {:noreply, clear_scan_task(state)}
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{refresh_task: %Task{ref: ref}} = state) do
+    if state.refresh_caller, do: GenServer.reply(state.refresh_caller, {:error, reason})
+    {:noreply, clear_refresh_task(state)}
+  end
+
+  @impl true
+  def handle_info(_msg, state) do
+    {:noreply, state}
+  end
+
+  # Private helpers
+
+  defp launch_scan_task(state) do
+    task =
+      Task.Supervisor.async_nolink(Lantern.TaskSupervisor, fn ->
+        {:scan, do_scan(state.projects)}
+      end)
+
+    %{state | scan_task: task, scan_revision: state.projects_revision}
+  end
+
+  defp launch_refresh_task(state) do
+    task =
+      Task.Supervisor.async_nolink(Lantern.TaskSupervisor, fn ->
+        refreshed =
+          state.projects
+          |> Enum.map(fn {name, project} -> {name, Discovery.enrich(project)} end)
+          |> Map.new()
+
+        {:refresh_all, refreshed}
+      end)
+
+    %{state | refresh_task: task, refresh_revision: state.projects_revision}
+  end
+
+  defp launch_initial_scan(state) do
+    server = self()
+    scan_revision = state.projects_revision
+    projects = state.projects
+
+    Task.Supervisor.start_child(Lantern.TaskSupervisor, fn ->
+      scanned_projects = do_scan(projects)
+      send(server, {:initial_scan_complete, scan_revision, scanned_projects})
+    end)
+  end
+
+  defp clear_scan_task(state), do: %{state | scan_task: nil, scan_caller: nil, scan_revision: nil}
+
+  defp clear_refresh_task(state),
+    do: %{state | refresh_task: nil, refresh_caller: nil, refresh_revision: nil}
+
+  defp put_projects(state, projects),
+    do: %{state | projects: projects, projects_revision: state.projects_revision + 1}
+
+  defp do_scan(existing_projects) do
     paths = Scanner.scan()
 
-    scanned_projects =
-      Enum.reduce(paths, state.projects, fn path, acc ->
-        name = Path.basename(path)
+    discovered_projects =
+      Enum.reduce(paths, %{}, fn path, acc ->
+        dir_name = Path.basename(path)
+        project = Detector.detect(path)
 
-        case Map.get(acc, name) do
+        # Use the yaml id as the canonical key when it matches an existing
+        # project (avoids duplicates when directory name differs in case
+        # from a registered id, e.g. "Lantern" dir vs "lantern" self-reg).
+        yaml_id =
+          case project do
+            %Project{id: id} when is_binary(id) and id != "" -> id
+            _ -> nil
+          end
+
+        name =
+          cond do
+            yaml_id != nil and Map.has_key?(existing_projects, yaml_id) -> yaml_id
+            true -> dir_name
+          end
+
+        case Map.get(existing_projects, name) do
           nil ->
-            project = path |> Detector.detect() |> Discovery.enrich()
-            Map.put(acc, name, project)
+            Map.put(acc, name, Discovery.enrich(project))
 
           existing ->
             updated =
@@ -438,26 +580,9 @@ defmodule Lantern.Projects.Manager do
         end
       end)
 
-    persist_projects(scanned_projects)
-    broadcast_projects_changed(scanned_projects)
-    Logger.info("Initial scan found #{map_size(scanned_projects)} project(s)")
-
-    # Auto-activate in a background task so we don't block the GenServer
-    activatable_names =
-      scanned_projects
-      |> Enum.filter(fn {_name, p} -> p.enabled && activatable?(p) && p.status != :running end)
-      |> Enum.map(fn {name, _p} -> name end)
-
-    if activatable_names != [] do
-      Task.Supervisor.start_child(Lantern.TaskSupervisor, fn ->
-        auto_activate_projects(activatable_names)
-      end)
-    end
-
-    {:noreply, %{state | projects: scanned_projects}}
+    preserved_projects = preserve_registered_projects(existing_projects, discovered_projects)
+    Map.merge(discovered_projects, preserved_projects)
   end
-
-  # Private helpers
 
   defp activatable?(%Project{run_cmd: cmd}) when is_binary(cmd), do: String.trim(cmd) != ""
   defp activatable?(%Project{upstream_url: url}) when is_binary(url), do: String.trim(url) != ""
@@ -509,7 +634,7 @@ defmodule Lantern.Projects.Manager do
   defp do_activate(%Project{type: :proxy} = project) do
     with {:ok, port} <- PortAllocator.allocate(project.name) do
       project = %{project | port: port, status: :starting}
-      project = maybe_compute_base_url(project)
+      project = Project.with_computed_base_url(project)
 
       with :ok <- validate_runtime_port_strategy(project),
            :ok <- ensure_caddy_config(project),
@@ -556,7 +681,10 @@ defmodule Lantern.Projects.Manager do
       :ok
     else
       {:error, reason} ->
-        Logger.warning("Caddy config failed for #{project.name}: #{reason} (continuing without reverse proxy)")
+        Logger.warning(
+          "Caddy config failed for #{project.name}: #{reason} (continuing without reverse proxy)"
+        )
+
         :ok
     end
   end
@@ -669,16 +797,6 @@ defmodule Lantern.Projects.Manager do
 
   defp maybe_release_port(%Project{type: :proxy, name: name}), do: PortAllocator.release(name)
   defp maybe_release_port(_project), do: :ok
-
-  # When base_url is not explicitly configured, derive it from the assigned port.
-  # This allows tools to use ${PORT} for dynamic port assignment and have
-  # service discovery return the correct URL automatically.
-  defp maybe_compute_base_url(%Project{base_url: nil, port: port} = project)
-       when is_integer(port) do
-    %{project | base_url: "http://127.0.0.1:#{port}"}
-  end
-
-  defp maybe_compute_base_url(project), do: project
 
   @updatable_fields [
     :type,

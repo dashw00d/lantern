@@ -327,4 +327,49 @@ defmodule Lantern.Projects.ProjectTest do
              end)
     end
   end
+
+  describe "with_computed_base_url/1" do
+    defp make_project(base_url, port) do
+      %Project{
+        id: "test",
+        name: "test",
+        path: "/tmp/test",
+        type: :proxy,
+        base_url: base_url,
+        port: port
+      }
+    end
+
+    test "derives base_url from port when nil" do
+      project = make_project(nil, 41003)
+      result = Project.with_computed_base_url(project)
+      assert result.base_url == "http://127.0.0.1:41003"
+    end
+
+    test "updates localhost base_url when port changes" do
+      # Simulates service restart: old port 41003, new port 41005
+      project = make_project("http://127.0.0.1:41003", 41005)
+      result = Project.with_computed_base_url(project)
+      assert result.base_url == "http://127.0.0.1:41005"
+    end
+
+    test "preserves external base_url unchanged" do
+      project = make_project("https://ghost.paidfor.net", 41005)
+      result = Project.with_computed_base_url(project)
+      assert result.base_url == "https://ghost.paidfor.net"
+    end
+
+    test "returns project unchanged when base_url nil and no port" do
+      project = make_project(nil, nil)
+      result = Project.with_computed_base_url(project)
+      assert result.base_url == nil
+    end
+
+    test "handles http (non-https) external URL unchanged" do
+      project = make_project("http://192.168.1.10:8080", 41005)
+      result = Project.with_computed_base_url(project)
+      # Not a 127.0.0.1 URL, so it should be preserved
+      assert result.base_url == "http://192.168.1.10:8080"
+    end
+  end
 end

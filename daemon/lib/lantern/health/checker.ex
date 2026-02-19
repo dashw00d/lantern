@@ -86,6 +86,10 @@ defmodule Lantern.Health.Checker do
       projects
       |> Enum.filter(&checkable?/1)
 
+    # Prune stale results for projects that no longer exist or are not checkable
+    checkable_names = MapSet.new(checkable, & &1.name)
+    pruned_results = Map.filter(state.results, fn {name, _} -> MapSet.member?(checkable_names, name) end)
+
     new_results =
       checkable
       |> Task.async_stream(
@@ -96,7 +100,7 @@ defmodule Lantern.Health.Checker do
         timeout: @check_timeout + 1_000,
         on_timeout: :kill_task
       )
-      |> Enum.reduce(state.results, fn
+      |> Enum.reduce(pruned_results, fn
         {:ok, {name, result}}, acc ->
           update_result(acc, name, result)
 
@@ -112,14 +116,20 @@ defmodule Lantern.Health.Checker do
 
   # Private helpers
 
-  defp checkable?(%{base_url: base_url, health_endpoint: endpoint, enabled: enabled})
-       when is_binary(base_url) and is_binary(endpoint) and enabled == true,
-       do: true
+  defp checkable?(%{health_endpoint: endpoint, enabled: enabled} = project)
+       when is_binary(endpoint) and enabled == true do
+    is_binary(check_base_url(project))
+  end
 
   defp checkable?(_), do: false
 
+  defp check_base_url(%{base_url: base_url}) when is_binary(base_url), do: base_url
+  defp check_base_url(%{upstream_url: upstream_url}) when is_binary(upstream_url), do: upstream_url
+  defp check_base_url(_), do: nil
+
   defp perform_check(project) do
-    url = String.trim_trailing(project.base_url, "/") <> project.health_endpoint
+    base = check_base_url(project)
+    url = String.trim_trailing(base, "/") <> project.health_endpoint
     start_time = System.monotonic_time(:millisecond)
 
     try do
@@ -136,7 +146,7 @@ defmodule Lantern.Health.Checker do
 
         {:error, reason} ->
           latency = System.monotonic_time(:millisecond) - start_time
-          %{status: "unreachable", latency_ms: latency, error: inspect(reason)}
+          %{status: "unreachable", latency_ms: latency, error: friendly_error(reason)}
       end
     rescue
       e ->
@@ -144,6 +154,13 @@ defmodule Lantern.Health.Checker do
         %{status: "error", latency_ms: latency, error: Exception.message(e)}
     end
   end
+
+  defp friendly_error(%{reason: :econnrefused}), do: "connection refused"
+  defp friendly_error(%{reason: :timeout}), do: "connection timed out"
+  defp friendly_error(%{reason: :closed}), do: "connection closed"
+  defp friendly_error(%{reason: :nxdomain}), do: "DNS lookup failed"
+  defp friendly_error(%{reason: reason}) when is_atom(reason), do: Atom.to_string(reason)
+  defp friendly_error(reason), do: inspect(reason)
 
   defp update_result(results, name, check_result) do
     now = DateTime.utc_now() |> DateTime.to_iso8601()
