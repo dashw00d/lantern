@@ -74,21 +74,21 @@ defmodule Lantern.Projects.Manager do
   Returns a single project by name.
   """
   def get(name) do
-    GenServer.call(__MODULE__, {:get, name})
+    GenServer.call(__MODULE__, {:get, name}, 30_000)
   end
 
   @doc """
   Returns a single project by ID, falling back to name lookup.
   """
   def get_by_id(id) do
-    GenServer.call(__MODULE__, {:get_by_id, id})
+    GenServer.call(__MODULE__, {:get_by_id, id}, 30_000)
   end
 
   @doc """
   Returns all projects.
   """
   def list do
-    GenServer.call(__MODULE__, :list)
+    GenServer.call(__MODULE__, :list, 30_000)
   end
 
   @doc """

@@ -6,11 +6,21 @@ defmodule LanternWeb.ProjectController do
   alias Lantern.Projects.{Manager, Project, ProcessRunner}
 
   def index(conn, params) do
-    projects =
-      Manager.list()
-      |> maybe_filter_hidden(include_hidden?(params))
+    case safe_manager_call(fn -> Manager.list() end) do
+      {:ok, projects} ->
+        filtered = maybe_filter_hidden(projects, include_hidden?(params))
+        json(conn, %{data: Enum.map(filtered, &Project.to_map/1)})
 
-    json(conn, %{data: Enum.map(projects, &Project.to_map/1)})
+      {:error, :timeout} ->
+        conn
+        |> put_status(:gateway_timeout)
+        |> json(%{error: "list_timeout", message: "Listing projects timed out"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "list_failed", message: inspect(reason)})
+    end
   end
 
   def show(conn, %{"name" => name}) do

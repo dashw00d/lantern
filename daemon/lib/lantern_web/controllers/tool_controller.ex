@@ -11,12 +11,25 @@ defmodule LanternWeb.ToolController do
     allowed_kinds = resolve_kind_filter(params)
     health_results = Checker.all()
 
-    tools =
-      Manager.list()
-      |> Enum.filter(&visible_tool?(&1, include_hidden, allowed_kinds))
-      |> Enum.map(&tool_summary(&1, health_results))
+    case safe_manager_call(fn -> Manager.list() end) do
+      {:ok, projects} ->
+        tools =
+          projects
+          |> Enum.filter(&visible_tool?(&1, include_hidden, allowed_kinds))
+          |> Enum.map(&tool_summary(&1, health_results))
 
-    json(conn, %{data: tools, tools: tools, meta: %{count: length(tools)}})
+        json(conn, %{data: tools, tools: tools, meta: %{count: length(tools)}})
+
+      {:error, :timeout} ->
+        conn
+        |> put_status(:gateway_timeout)
+        |> json(%{error: "list_timeout", message: "Listing tools timed out"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "list_failed", message: inspect(reason)})
+    end
   end
 
   def show(conn, %{"id" => id} = params) do
@@ -64,11 +77,14 @@ defmodule LanternWeb.ToolController do
   end
 
   defp fetch_tool(id, include_hidden, allowed_kinds) do
-    case Manager.get_by_id(id) do
-      %Project{} = project ->
+    case safe_manager_call(fn -> Manager.get_by_id(id) end) do
+      {:ok, %Project{} = project} ->
         if visible_tool?(project, include_hidden, allowed_kinds), do: project, else: nil
 
-      _ ->
+      {:ok, _} ->
+        nil
+
+      {:error, _reason} ->
         nil
     end
   end
@@ -210,4 +226,14 @@ defmodule LanternWeb.ToolController do
   end
 
   defp truthy_param?(_), do: false
+
+  defp safe_manager_call(fun) do
+    {:ok, fun.()}
+  catch
+    :exit, {:timeout, _} ->
+      {:error, :timeout}
+
+    :exit, reason ->
+      {:error, reason}
+  end
 end
