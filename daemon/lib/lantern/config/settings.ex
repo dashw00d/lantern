@@ -44,19 +44,20 @@ defmodule Lantern.Config.Settings do
 
     settings_path = Path.join(state_dir, "settings.json")
 
-    # App env values from runtime.exs that should NOT be overridden by persisted file
-    app_env_overrides = %{
-      workspace_roots:
-        Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")]),
-      tld: Application.get_env(:lantern, :tld, ".glow")
-    }
+    # Only explicit runtime env vars should override persisted settings.
+    app_env_overrides =
+      %{}
+      |> maybe_put_env_override(
+        "LANTERN_WORKSPACES",
+        :workspace_roots,
+        Application.get_env(:lantern, :workspace_roots, [Path.expand("~/sites")])
+      )
+      |> maybe_put_env_override("LANTERN_TLD", :tld, Application.get_env(:lantern, :tld, ".glow"))
 
     settings =
       @default_settings
       |> Map.put(:state_dir, state_dir)
-      |> Map.merge(app_env_overrides)
       |> merge_from_file(settings_path)
-      # Re-apply app env overrides so runtime.exs always wins over stale file values
       |> Map.merge(app_env_overrides)
 
     {:ok, %{settings: settings, path: settings_path}}
@@ -141,4 +142,11 @@ defmodule Lantern.Config.Settings do
   end
 
   defp atomize_keys(_), do: %{}
+
+  defp maybe_put_env_override(overrides, env_key, setting_key, value) do
+    case System.get_env(env_key) do
+      nil -> overrides
+      _ -> Map.put(overrides, setting_key, value)
+    end
+  end
 end
